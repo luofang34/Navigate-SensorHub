@@ -12,3 +12,16 @@ bus = "i2c0"
 address = 0x1c
 frequency = 80
 
+[[sensor]]
+id = "static0"
+driver = "bmp388"
+bus = "i2c0"
+address = 0x77
+frequency = 80
+
+[[sensor]]
+id = "pitot0"
+driver = "bmp388"
+bus = "i2c0"
+address = 0x77
+frequency = 80
