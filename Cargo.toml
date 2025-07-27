@@ -15,6 +15,7 @@ zmq = "0.10"
 i2cdev = "0.6.1"
 
 [features]
-default = ["lsm6dsl", "lis3mdl"]
+default = ["lsm6dsl", "lis3mdl", "bmp388"]
 lsm6dsl = []
 lis3mdl = []
+bmp388 = []
