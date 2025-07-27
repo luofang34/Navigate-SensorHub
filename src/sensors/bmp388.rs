@@ -2,9 +2,6 @@ use crate::bus::i2c::I2CBus;
 use crate::sensors::{SensorDataFrame, SensorDriver};
 use async_trait::async_trait;
 
-compile_error!("I should not compile")
-
-
 enum PressureKind {
     Static,
     Pitot,
