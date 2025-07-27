@@ -1,7 +1,7 @@
 # Stage 1: Build
 FROM rust:1.77-slim as builder
 WORKDIR /app
-ARG SENSOR_FEATURES="lsm6dsl"
+ARG SENSOR_FEATURES="lsm6dsl lis3mdl"
 RUN apt-get update && apt-get install -y libi2c-dev
 COPY . .
 RUN cargo build --release --features="${SENSOR_FEATURES}"
