@@ -1,6 +1,7 @@
 use crate::config::sensor_config::SensorConfig;
 use crate::config::load_bus_config;
-use crate::sensors::{lsm6dsl::Lsm6dsl, SensorDriver};
+use crate::sensors::create_sensor_driver;
+use crate::sensors::SensorDriver;
 use crate::bus::i2c::I2CBus;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,14 +19,14 @@ pub async fn init_all(sensor_config: &SensorConfig) -> Result<(Vec<Box<dyn Senso
     }
 
     let mut sensors: Vec<Box<dyn SensorDriver>> = Vec::new();
+    println!("[registry] initializing {} sensors...", sensor_config.sensors.len());
     for s in sensor_config.sensors.iter() {
-        if s.driver == "lsm6dsl" {
-            let mut sensor = Lsm6dsl::new(s.id.clone(), s.address);
-            let bus_arc = bus_map.get(&s.bus).ok_or_else(|| format!("Bus '{}' not found for sensor '{}'", s.bus, s.id))?;
-            let mut bus = bus_arc.lock().await;
-            sensor.init(&mut *bus).await?;
-            sensors.push(Box::new(sensor));
-        }
+        let mut sensor = create_sensor_driver(&s.driver, s.id.clone(), s.address, s.bus.clone())?;
+        println!("[registry] registering sensor: id={} driver={} bus={}", s.id, s.driver, s.bus);
+        let bus_arc = bus_map.get(&s.bus).ok_or_else(|| format!("Bus '{}' not found for sensor '{}'", s.bus, s.id))?;
+        let mut bus = bus_arc.lock().await;
+        sensor.init(&mut *bus).await?;
+        sensors.push(sensor);
     }
 
     Ok((sensors, bus_map))
