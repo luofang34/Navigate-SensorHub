@@ -1,18 +1,14 @@
-#[cfg(feature = "lsm6dsl")]
-pub mod lsm6dsl;
-#[cfg(feature = "lis3mdl")]
-pub mod lis3mdl;
-
 use async_trait::async_trait;
 use crate::bus::i2c::I2CBus;
 
-
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct SensorDataFrame {
     pub accel: Option<[f32; 3]>,
     pub gyro: Option<[f32; 3]>,
     pub mag: Option<[f32; 3]>,
     pub temp: Option<f32>,
+    pub pressure_static: Option<f32>,
+    pub pressure_pitot: Option<f32>,
 }
 
 #[async_trait]
@@ -23,22 +19,12 @@ pub trait SensorDriver: Send + Sync {
     fn bus(&self) -> &str;
 }
 
-pub trait SensorFactory: Sync {
-    fn name(&self) -> &'static str;
-    fn create(&self, id: String, address: u8, bus_id: String) -> Box<dyn SensorDriver + Send>;
-}
-
 #[cfg(feature = "lsm6dsl")]
-pub use self::lsm6dsl::LSM6DSL_FACTORY;
+pub mod lsm6dsl;
 #[cfg(feature = "lis3mdl")]
-pub use self::lis3mdl::LIS3MDL_FACTORY;
-
-pub static SENSOR_FACTORIES: &[&dyn SensorFactory] = &[
-    #[cfg(feature = "lsm6dsl")]
-    &LSM6DSL_FACTORY,
-    #[cfg(feature = "lis3mdl")]
-    &LIS3MDL_FACTORY,
-];
+pub mod lis3mdl;
+#[cfg(feature = "bmp388")]
+pub mod bmp388;
 
 pub fn create_sensor_driver(
     driver: &str,
@@ -46,9 +32,13 @@ pub fn create_sensor_driver(
     address: u8,
     bus_id: String,
 ) -> Result<Box<dyn SensorDriver + Send>, String> {
-    SENSOR_FACTORIES
-        .iter()
-        .find(|f| f.name() == driver)
-        .map(|f| f.create(id, address, bus_id))
-        .ok_or_else(|| format!("Unsupported driver '{}'", driver))
+    match driver {
+        #[cfg(feature = "lsm6dsl")]
+        "lsm6dsl" => Ok(Box::new(lsm6dsl::Lsm6dsl::new(id, address, bus_id))),
+        #[cfg(feature = "lis3mdl")]
+        "lis3mdl" => Ok(Box::new(lis3mdl::Lis3mdl::new(id, address, bus_id))),
+        #[cfg(feature = "bmp388")]
+        "bmp388" => Ok(Box::new(bmp388::Bmp388::new(id, address, bus_id))),
+        _ => Err(format!("Unsupported driver '{}'", driver)),
+    }
 }
