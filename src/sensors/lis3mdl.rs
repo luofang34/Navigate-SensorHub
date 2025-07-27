@@ -1,5 +1,4 @@
 use super::{SensorDataFrame, SensorDriver};
-use crate::sensors::SensorFactory;
 use crate::bus::i2c::I2CBus;
 use async_trait::async_trait;
 
@@ -79,17 +78,3 @@ impl SensorDriver for Lis3mdl {
         &self.bus_id
     }
 }
-
-pub struct Lis3mdlFactory;
-
-impl SensorFactory for Lis3mdlFactory {
-    fn create(&self, id: String, address: u8, bus_id: String) -> Box<dyn SensorDriver + Send> {
-        Box::new(Lis3mdl::new(id, address, bus_id))
-    }
-
-    fn name(&self) -> &'static str {
-        "lis3mdl"
-    }
-}
-
-pub static LIS3MDL_FACTORY: Lis3mdlFactory = Lis3mdlFactory;

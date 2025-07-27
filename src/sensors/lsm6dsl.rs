@@ -1,4 +1,3 @@
-use crate::sensors::SensorFactory;
 use super::{SensorDataFrame, SensorDriver};
 use crate::bus::i2c::I2CBus;
 use async_trait::async_trait;
@@ -90,19 +89,5 @@ impl SensorDriver for Lsm6dsl {
 
     fn bus(&self) -> &str {
         &self.bus_id
-    }
-}
-
-pub static LSM6DSL_FACTORY: Lsm6dslFactory = Lsm6dslFactory;
-
-pub struct Lsm6dslFactory;
-
-impl SensorFactory for Lsm6dslFactory {
-    fn name(&self) -> &'static str {
-        "lsm6dsl"
-    }
-
-    fn create(&self, id: String, address: u8, bus_id: String) -> Box<dyn SensorDriver + Send> {
-        Box::new(Lsm6dsl::new(id, address, bus_id))
     }
 }
