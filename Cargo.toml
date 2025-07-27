@@ -1,0 +1,19 @@
+[package]
+name = "navigate_sensorhub"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "time", "fs", "sync"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_derive = "1.0"
+serde_json = "1.0"
+toml = "0.8"
+async-trait = "0.1"
+thiserror = "1.0"
+zmq = "0.10"
+i2cdev = "0.6.1"
+
+[features]
+default = ["lsm6dsl"]
+lsm6dsl = []

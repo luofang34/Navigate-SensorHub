@@ -1,0 +1,4 @@
+[[bus]]
+id = "i2c0"
+type = "i2c"
+path = "/dev/i2c-1"
