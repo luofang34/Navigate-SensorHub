@@ -4,3 +4,10 @@ driver = "lsm6dsl"
 bus = "i2c0"
 address = 0x6a
 frequency = 100
+
+[[sensor]]
+id = "mag0"
+driver = "lis3mdl"
+bus = "i2c0"
+address = 0x1c
+frequency = 80
