@@ -28,6 +28,7 @@ target/
 # AI assistant conversation files
 Claude.md
 claude.md
+CLAUDE.md
 claude/
 gemini.md
 Gemini.md
