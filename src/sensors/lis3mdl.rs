@@ -1,5 +1,6 @@
 use super::{SensorDataFrame, SensorDriver};
 use crate::bus::i2c::I2CBus;
+use crate::errors::{SensorError, SensorResult};
 use async_trait::async_trait;
 
 // Register addresses for the LIS3MDL
@@ -27,35 +28,58 @@ impl Lis3mdl {
 
 #[async_trait]
 impl SensorDriver for Lis3mdl {
-    async fn init(&mut self, bus: &mut I2CBus) -> Result<(), String> {
+    async fn init(&mut self, bus: &mut I2CBus) -> SensorResult<()> {
         // Verify device identity
         let mut who_am_i_buf = [0u8; 1];
-        // println!("[{}] Reading WHO_AM_I from 0x{:02x} reg 0x{:02x}", self.id, self.address, WHO_AM_I);
-        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await.map_err(|e| e.to_string())?;
-        // println!("[{}] Got WHO_AM_I: 0x{:02x}", self.id, who_am_i_buf[0]);
+        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await?;
+        
         if who_am_i_buf[0] != 0x3D {
-            return Err(format!("LIS3MDL WHO_AM_I check failed. Expected 0x3D, got {:#04x}", who_am_i_buf[0]));
+            return Err(SensorError::WrongChipId {
+                sensor: self.id.clone(),
+                expected: 0x3D,
+                actual: who_am_i_buf[0],
+            });
         }
 
         // Configure magnetometer:
         // CTRL_REG1: Temp sensor disabled, medium-performance mode, 80 Hz ODR
-        bus.write_byte(self.address, CTRL_REG1, 0b01011100).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, CTRL_REG1, 0b01011100).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to configure CTRL_REG1: {}", e),
+            })?;
         // CTRL_REG2: +/- 4 gauss full scale
-        bus.write_byte(self.address, CTRL_REG2, 0b00000000).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, CTRL_REG2, 0b00000000).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to configure CTRL_REG2: {}", e),
+            })?;
         // CTRL_REG3: Continuous-conversion mode
-        bus.write_byte(self.address, CTRL_REG3, 0b00000000).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, CTRL_REG3, 0b00000000).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to configure CTRL_REG3: {}", e),
+            })?;
         // CTRL_REG4: Z-axis medium-performance mode
-        bus.write_byte(self.address, CTRL_REG4, 0b00000100).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, CTRL_REG4, 0b00000100).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to configure CTRL_REG4: {}", e),
+            })?;
 
         Ok(())
     }
 
-    async fn read(&self, bus: &mut I2CBus) -> Result<SensorDataFrame, String> {
+    async fn read(&self, bus: &mut I2CBus) -> SensorResult<SensorDataFrame> {
         let mut frame = SensorDataFrame::default();
 
         // Read magnetometer data
         let mut mag_buf = [0u8; 6];
-        bus.read_bytes(self.address, OUT_X_L, &mut mag_buf).await.map_err(|e| e.to_string())?;
+        bus.read_bytes(self.address, OUT_X_L, &mut mag_buf).await
+            .map_err(|e| SensorError::ReadError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to read magnetometer data: {}", e),
+            })?;
 
         let mag_raw = [
             i16::from_le_bytes([mag_buf[0], mag_buf[1]]),

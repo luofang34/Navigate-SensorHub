@@ -1,5 +1,6 @@
 use super::{SensorDataFrame, SensorDriver};
 use crate::bus::i2c::I2CBus;
+use crate::errors::{SensorError, SensorResult};
 use async_trait::async_trait;
 
 // Register addresses for the LSM6DSL
@@ -27,30 +28,46 @@ impl Lsm6dsl {
 
 #[async_trait]
 impl SensorDriver for Lsm6dsl {
-    async fn init(&mut self, bus: &mut I2CBus) -> Result<(), String> {
+    async fn init(&mut self, bus: &mut I2CBus) -> SensorResult<()> {
         // Verify device identity
         let mut who_am_i_buf = [0u8; 1];
-        // println!("[{}] Reading WHO_AM_I from 0x{:02x} reg 0x{:02x}", self.id, self.address, WHO_AM_I);
-        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await.map_err(|e| e.to_string())?;
-        // println!("[{}] Got WHO_AM_I: 0x{:02x}", self.id, who_am_i_buf[0]);
+        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await?;
+        
         if who_am_i_buf[0] != 0x6A {
-            return Err(format!("LSM6DSL WHO_AM_I check failed. Expected 0x6A, got {:#04x}", who_am_i_buf[0]));
+            return Err(SensorError::WrongChipId {
+                sensor: self.id.clone(),
+                expected: 0x6A,
+                actual: who_am_i_buf[0],
+            });
         }
 
         // Configure accelerometer: 104 Hz, 2g
-        bus.write_byte(self.address, CTRL1_XL, 0b01000000).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, CTRL1_XL, 0b01000000).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to configure accelerometer: {}", e),
+            })?;
+            
         // Configure gyroscope: 104 Hz, 250 dps
-        bus.write_byte(self.address, CTRL2_G, 0b01000000).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, CTRL2_G, 0b01000000).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to configure gyroscope: {}", e),
+            })?;
 
         Ok(())
     }
 
-    async fn read(&self, bus: &mut I2CBus) -> Result<SensorDataFrame, String> {
+    async fn read(&self, bus: &mut I2CBus) -> SensorResult<SensorDataFrame> {
         let mut frame = SensorDataFrame::default();
 
         // Read accelerometer data
         let mut accel_buf = [0u8; 6];
-        bus.read_bytes(self.address, OUTX_L_XL, &mut accel_buf).await.map_err(|e| e.to_string())?;
+        bus.read_bytes(self.address, OUTX_L_XL, &mut accel_buf).await
+            .map_err(|e| SensorError::ReadError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to read accelerometer: {}", e),
+            })?;
         let accel_raw = [
             i16::from_le_bytes([accel_buf[0], accel_buf[1]]),
             i16::from_le_bytes([accel_buf[2], accel_buf[3]]),
@@ -64,7 +81,11 @@ impl SensorDriver for Lsm6dsl {
 
         // Read gyroscope data
         let mut gyro_buf = [0u8; 6];
-        bus.read_bytes(self.address, OUTX_L_G, &mut gyro_buf).await.map_err(|e| e.to_string())?;
+        bus.read_bytes(self.address, OUTX_L_G, &mut gyro_buf).await
+            .map_err(|e| SensorError::ReadError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to read gyroscope: {}", e),
+            })?;
         let gyro_raw = [
             i16::from_le_bytes([gyro_buf[0], gyro_buf[1]]),
             i16::from_le_bytes([gyro_buf[2], gyro_buf[3]]),
@@ -78,7 +99,11 @@ impl SensorDriver for Lsm6dsl {
 
         // Read temperature data
         let mut temp_buf = [0u8; 2];
-        bus.read_bytes(self.address, OUT_TEMP_L, &mut temp_buf).await.map_err(|e| e.to_string())?;
+        bus.read_bytes(self.address, OUT_TEMP_L, &mut temp_buf).await
+            .map_err(|e| SensorError::ReadError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to read temperature: {}", e),
+            })?;
         let temp_raw = i16::from_le_bytes([temp_buf[0], temp_buf[1]]);
         frame.temp = Some((temp_raw as f32 / 256.0) + 25.0);
 

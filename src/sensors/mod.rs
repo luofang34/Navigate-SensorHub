@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use crate::bus::i2c::I2CBus;
+use crate::errors::{SensorError, SensorResult};
 
 #[derive(Debug, Default, Clone)]
 pub struct SensorDataFrame {
@@ -13,8 +14,8 @@ pub struct SensorDataFrame {
 
 #[async_trait]
 pub trait SensorDriver: Send + Sync {
-    async fn init(&mut self, _bus: &mut I2CBus) -> Result<(), String>;
-    async fn read(&self, bus: &mut I2CBus) -> Result<SensorDataFrame, String>;
+    async fn init(&mut self, _bus: &mut I2CBus) -> SensorResult<()>;
+    async fn read(&self, bus: &mut I2CBus) -> SensorResult<SensorDataFrame>;
     fn id(&self) -> &str;
     fn bus(&self) -> &str;
 }
@@ -31,7 +32,7 @@ pub fn create_sensor_driver(
     id: String,
     address: u8,
     bus_id: String,
-) -> Result<Box<dyn SensorDriver + Send>, String> {
+) -> SensorResult<Box<dyn SensorDriver + Send>> {
     match driver {
         #[cfg(feature = "lsm6dsl")]
         "lsm6dsl" => Ok(Box::new(lsm6dsl::Lsm6dsl::new(id, address, bus_id))),
@@ -39,6 +40,6 @@ pub fn create_sensor_driver(
         "lis3mdl" => Ok(Box::new(lis3mdl::Lis3mdl::new(id, address, bus_id))),
         #[cfg(feature = "bmp388")]
         "bmp388" => Ok(Box::new(bmp388::Bmp388::new(id, address, bus_id))),
-        _ => Err(format!("Unsupported driver '{}'", driver)),
+        _ => Err(SensorError::UnsupportedDriver { driver: driver.to_string() }),
     }
 }

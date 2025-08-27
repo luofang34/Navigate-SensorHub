@@ -5,6 +5,7 @@ mod bus;
 mod sensors;
 mod messages;
 mod grpc_service;
+mod errors;
 
 use crate::config::load_sensor_config;
 use crate::registry::init_all;

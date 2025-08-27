@@ -1,5 +1,6 @@
 use crate::bus::i2c::I2CBus;
 use crate::sensors::{SensorDataFrame, SensorDriver};
+use crate::errors::{SensorError, SensorResult};
 use async_trait::async_trait;
 
 enum PressureKind {
@@ -50,23 +51,34 @@ impl Bmp388 {
 
 #[async_trait]
 impl SensorDriver for Bmp388 {
-    async fn init(&mut self, bus: &mut I2CBus) -> Result<(), String> {
+    async fn init(&mut self, bus: &mut I2CBus) -> SensorResult<()> {
         // Check chip ID (should be 0x50)
         let mut buf = [0u8; 1];
-        // println!("[{}] Reading chip ID from 0x{:02x}", self.id, self.address);
-        bus.read_bytes(self.address, 0x00, &mut buf).await.map_err(|e| e.to_string())?;
-        // println!("[{}] Got chip ID: 0x{:02x}", self.id, buf[0]);
+        bus.read_bytes(self.address, 0x00, &mut buf).await?;
+        
         if buf[0] != 0x50 {
-            return Err(format!("BMP388: Unexpected chip ID: 0x{:02x}", buf[0]));
+            return Err(SensorError::WrongChipId {
+                sensor: self.id.clone(),
+                expected: 0x50,
+                actual: buf[0],
+            });
         }
 
         // Soft reset (0x7E = 0xB6)
-        bus.write_byte(self.address, 0x7E, 0xB6).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x7E, 0xB6).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to reset sensor: {}", e),
+            })?;
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
         // Read calibration coefficients (0x31 to 0x45)
         let mut cal_buf = [0u8; 21];
-        bus.read_bytes(self.address, 0x31, &mut cal_buf).await.map_err(|e| e.to_string())?;
+        bus.read_bytes(self.address, 0x31, &mut cal_buf).await
+            .map_err(|e| SensorError::CalibrationError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to read calibration data: {}", e),
+            })?;
         
         // Parse calibration data according to BMP388 datasheet
         let t1 = (cal_buf[1] as u16) << 8 | cal_buf[0] as u16;
@@ -106,42 +118,73 @@ impl SensorDriver for Bmp388 {
 
         // Set oversampling configuration
         // 0x1C = OSR: [5:3]=temp_os x1 (000), [2:0]=press_os x4 (010) = 0x02
-        bus.write_byte(self.address, 0x1C, 0x02).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x1C, 0x02).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to set oversampling: {}", e),
+            })?;
         
         // Set output data rate to 50Hz
         // 0x1D = ODR: 50Hz = 0x02
-        bus.write_byte(self.address, 0x1D, 0x02).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x1D, 0x02).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to set output data rate: {}", e),
+            })?;
         
         // Set IIR filter
         // 0x1F = CONFIG: filter_coeff=1 (001) = 0x00
-        bus.write_byte(self.address, 0x1F, 0x00).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x1F, 0x00).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to set IIR filter: {}", e),
+            })?;
         
         // Enable pressure and temperature sensors and set normal mode
         // 0x1B = PWR_CTRL: [5:4]=mode=11 (normal), [1]=press_en=1, [0]=temp_en=1 = 0x33
-        bus.write_byte(self.address, 0x1B, 0x33).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x1B, 0x33).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to enable sensors: {}", e),
+            })?;
         
         // Wait for first measurement to complete
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         
         // Force a measurement in case normal mode isn't working
         // 0x1B = PWR_CTRL: forced mode with both sensors = 0x13
-        bus.write_byte(self.address, 0x1B, 0x13).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x1B, 0x13).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to force measurement: {}", e),
+            })?;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         
         // Back to normal mode
-        bus.write_byte(self.address, 0x1B, 0x33).await.map_err(|e| e.to_string())?;
+        bus.write_byte(self.address, 0x1B, 0x33).await
+            .map_err(|e| SensorError::InitError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to set normal mode: {}", e),
+            })?;
         
         println!("[{}] BMP388 calibration loaded", self.id);
         Ok(())
     }
 
-    async fn read(&self, bus: &mut I2CBus) -> Result<SensorDataFrame, String> {
+    async fn read(&self, bus: &mut I2CBus) -> SensorResult<SensorDataFrame> {
         let calibration = self.calibration.as_ref()
-            .ok_or_else(|| "BMP388: Calibration not loaded".to_string())?;
+            .ok_or_else(|| SensorError::DataError {
+                sensor: self.id.clone(),
+                reason: "Calibration not loaded".to_string(),
+            })?;
         
         // Pressure and temperature are 24-bit unsigned
         let mut buf = [0u8; 6];
-        bus.read_bytes(self.address, 0x04, &mut buf).await.map_err(|e| e.to_string())?;
+        bus.read_bytes(self.address, 0x04, &mut buf).await
+            .map_err(|e| SensorError::ReadError {
+                sensor: self.id.clone(),
+                reason: format!("Failed to read sensor data: {}", e),
+            })?;
 
         let press_raw = ((buf[2] as u32) << 16) | ((buf[1] as u32) << 8) | (buf[0] as u32);
         let temp_raw = ((buf[5] as u32) << 16) | ((buf[4] as u32) << 8) | (buf[3] as u32);
