@@ -43,16 +43,6 @@ docker exec -it navigate-sensorhub-sensorhub-1 sh -c "grpcurl -plaintext localho
 docker compose down
 ```
 
-### One-Line Sensor Data Test
-
-```bash
-# Stream live IMU data (accelerometer + gyroscope)
-docker compose up -d && sleep 3 && cd sensor-reader-test && cargo run -- --grpc imu
-
-# Stream all sensors
-docker compose up -d && sleep 3 && cd sensor-reader-test && cargo run -- --grpc all
-```
-
 ## Configuration
 
 ### config/sensors.toml
