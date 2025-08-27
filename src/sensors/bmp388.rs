@@ -85,34 +85,51 @@ impl SensorDriver for Bmp388 {
         let p10 = cal_buf[19] as i8;
         let p11 = cal_buf[20] as i8;
         
-        // Convert to floating point with scale factors from datasheet
+        // Store raw calibration values - scaling will be done during compensation
         self.calibration = Some(Bmp388Calibration {
-            t1: t1 as f64 / (0.00390625f64), // 2^-8
-            t2: t2 as f64 / (1073741824.0f64), // 2^30
-            t3: t3 as f64 / (281474976710656.0f64), // 2^48
+            t1: t1 as f64,
+            t2: t2 as f64,
+            t3: t3 as f64,
             
-            p1: (p1 as f64 - 16384.0f64) / 1048576.0f64, // (P1 - 2^14) / 2^20
-            p2: (p2 as f64 - 16384.0f64) / 536870912.0f64, // (P2 - 2^14) / 2^29
-            p3: p3 as f64 / 4294967296.0f64, // P3 / 2^32
-            p4: p4 as f64 / 137438953472.0f64, // P4 / 2^37
-            p5: p5 as f64 / (0.125f64), // P5 / 2^-3
-            p6: p6 as f64 / 64.0f64, // P6 / 2^6
-            p7: p7 as f64 / 256.0f64, // P7 / 2^8
-            p8: p8 as f64 / 32768.0f64, // P8 / 2^15
-            p9: p9 as f64 / 281474976710656.0f64, // P9 / 2^48
-            p10: p10 as f64 / 281474976710656.0f64, // P10 / 2^48
-            p11: p11 as f64 / 36893488147419103232.0f64, // P11 / 2^65
+            p1: p1 as f64,
+            p2: p2 as f64,
+            p3: p3 as f64,
+            p4: p4 as f64,
+            p5: p5 as f64,
+            p6: p6 as f64,
+            p7: p7 as f64,
+            p8: p8 as f64,
+            p9: p9 as f64,
+            p10: p10 as f64,
+            p11: p11 as f64,
         });
 
-        // Set power mode (normal), pressure and temp enabled
-        // 0x1B = PWR_CTRL, 0x30 = press + temp sensor enabled
-        bus.write_byte(self.address, 0x1B, 0x30).await.map_err(|e| e.to_string())?;
+        // Set oversampling configuration
+        // 0x1C = OSR: [5:3]=temp_os x1 (000), [2:0]=press_os x4 (010) = 0x02
+        bus.write_byte(self.address, 0x1C, 0x02).await.map_err(|e| e.to_string())?;
         
-        // Set oversampling and filter config
-        // 0x1C = OSR: temp_os x2, press_os x16
-        bus.write_byte(self.address, 0x1C, 0x05).await.map_err(|e| e.to_string())?;
-        // 0x1F = CONFIG: IIR filter coeff 3
-        bus.write_byte(self.address, 0x1F, 0x02).await.map_err(|e| e.to_string())?;
+        // Set output data rate to 50Hz
+        // 0x1D = ODR: 50Hz = 0x02
+        bus.write_byte(self.address, 0x1D, 0x02).await.map_err(|e| e.to_string())?;
+        
+        // Set IIR filter
+        // 0x1F = CONFIG: filter_coeff=1 (001) = 0x00
+        bus.write_byte(self.address, 0x1F, 0x00).await.map_err(|e| e.to_string())?;
+        
+        // Enable pressure and temperature sensors and set normal mode
+        // 0x1B = PWR_CTRL: [5:4]=mode=11 (normal), [1]=press_en=1, [0]=temp_en=1 = 0x33
+        bus.write_byte(self.address, 0x1B, 0x33).await.map_err(|e| e.to_string())?;
+        
+        // Wait for first measurement to complete
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        
+        // Force a measurement in case normal mode isn't working
+        // 0x1B = PWR_CTRL: forced mode with both sensors = 0x13
+        bus.write_byte(self.address, 0x1B, 0x13).await.map_err(|e| e.to_string())?;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        
+        // Back to normal mode
+        bus.write_byte(self.address, 0x1B, 0x33).await.map_err(|e| e.to_string())?;
         
         println!("[{}] BMP388 calibration loaded", self.id);
         Ok(())
@@ -129,28 +146,42 @@ impl SensorDriver for Bmp388 {
         let press_raw = ((buf[2] as u32) << 16) | ((buf[1] as u32) << 8) | (buf[0] as u32);
         let temp_raw = ((buf[5] as u32) << 16) | ((buf[4] as u32) << 8) | (buf[3] as u32);
 
-        // Temperature compensation according to BMP388 datasheet
-        let temp_comp1 = temp_raw as f64 - calibration.t1;
-        let temp_comp2 = temp_comp1 * calibration.t2;
-        let temperature = temp_comp2 + (temp_comp1 * temp_comp1) * calibration.t3;
+        // Temperature compensation according to BMP388 datasheet (Python reference implementation)
+        let partial_data1 = temp_raw as f64 - 256.0 * calibration.t1;
+        let partial_data2 = calibration.t2 * partial_data1;
+        let partial_data3 = partial_data1 * partial_data1;
+        let partial_data4 = partial_data3 * calibration.t3;
+        let partial_data5 = partial_data2 * 262144.0 + partial_data4;
+        let partial_data6 = partial_data5 / 4294967296.0;
+        let t_fine = partial_data6;
+        // The formula outputs temperature scaled by 100, divide to get °C
+        let temperature = (partial_data6 * 25.0 / 16384.0) / 100.0;
         
-        // Pressure compensation according to BMP388 datasheet  
-        let press_comp1 = calibration.p6 * temperature;
-        let press_comp2 = calibration.p7 * (temperature * temperature);
-        let press_comp3 = calibration.p8 * (temperature * temperature * temperature);
-        let press_offset = calibration.p5 + press_comp1 + press_comp2 + press_comp3;
+        // Pressure compensation according to BMP388 datasheet (Python reference implementation)
+        let partial_data1 = t_fine * t_fine;
+        let partial_data2 = partial_data1 / 64.0;
+        let partial_data3 = partial_data2 * t_fine / 256.0;
+        let partial_data4 = calibration.p8 * partial_data3 / 32.0;
+        let partial_data5 = calibration.p7 * partial_data1 * 16.0;
+        let partial_data6 = calibration.p6 * t_fine * 4194304.0;
+        let offset = calibration.p5 * 140737488355328.0 + partial_data4 + partial_data5 + partial_data6;
         
-        let press_comp4 = calibration.p1 * temperature;
-        let press_comp5 = calibration.p2 * (temperature * temperature);
-        let press_comp6 = calibration.p3 * (temperature * temperature * temperature);
-        let press_sensitivity = (press_raw as f64) * (calibration.p4 + press_comp4 + press_comp5 + press_comp6);
+        let partial_data2 = calibration.p4 * partial_data3 / 32.0;
+        let partial_data4 = calibration.p3 * partial_data1 * 4.0;
+        let partial_data5 = (calibration.p2 - 16384.0) * t_fine * 2097152.0;
+        let sensitivity = (calibration.p1 - 16384.0) * 70368744177664.0 + partial_data2 + partial_data4 + partial_data5;
         
-        let press_comp7 = (press_raw as f64) * (press_raw as f64);
-        let press_comp8 = calibration.p9 + calibration.p10 * temperature;
-        let press_comp9 = press_comp7 * press_comp8;
-        let press_comp10 = press_comp9 + (press_raw as f64) * (press_raw as f64) * (press_raw as f64) * calibration.p11;
-        
-        let pressure = press_offset + press_sensitivity + press_comp10;
+        let partial_data1 = sensitivity / 16777216.0 * press_raw as f64;
+        let partial_data2 = calibration.p10 * t_fine;
+        let partial_data3 = partial_data2 + 65536.0 * calibration.p9;
+        let partial_data4 = partial_data3 * press_raw as f64 / 8192.0;
+        let partial_data5 = partial_data4 * press_raw as f64 / 512.0;
+        let partial_data6 = press_raw as f64 * press_raw as f64;
+        let partial_data2 = calibration.p11 * partial_data6 / 65536.0;
+        let partial_data3 = partial_data2 * press_raw as f64 / 128.0;
+        let partial_data4 = offset / 4.0 + partial_data1 + partial_data5 + partial_data3;
+        // The formula outputs pressure scaled by 100, divide to get Pa
+        let pressure = (partial_data4 * 25.0 / 1099511627776.0) / 100.0;
 
         let frame = match self.kind {
             PressureKind::Static => SensorDataFrame {
