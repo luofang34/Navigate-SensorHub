@@ -1,0 +1,40 @@
+
+services:
+  sensorhub:
+    build:
+      context: .
+      args:
+        # Customize sensor features for your hardware
+        FEATURES: "lsm6dsl lis3mdl bmp388"
+    ports:
+      - "50051:50051"
+    devices:
+      # Mount I2C devices - adjust based on your hardware
+      - "/dev/i2c-1:/dev/i2c-1"
+    volumes:
+      # Mount your custom configuration
+      - "./config:/app/config:ro"
+    environment:
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    restart: unless-stopped
+    
+  # Example: Multi-bus setup
+  sensorhub-multi:
+    build:
+      context: .
+      args:
+        FEATURES: "lsm6dsl lis3mdl bmp388"
+    ports:
+      - "50052:50051"
+    devices:
+      - "/dev/i2c-1:/dev/i2c-1"
+      - "/dev/i2c-2:/dev/i2c-2" 
+    volumes:
+      - "./config:/app/config:ro"
+    environment:
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    profiles:
+      - multi-bus
+    restart: unless-stopped

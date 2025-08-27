@@ -17,8 +17,10 @@ use tonic::transport::Server;
 async fn main() {
     println!("[NavigateSensorHub] starting up...");
     
-    // Load configuration
-    let sensor_config = load_sensor_config("config/sensors.toml").expect("Failed to load sensor config");
+    // Load configuration from CONFIG_PATH or default
+    let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config".to_string());
+    let sensor_config_path = format!("{}/sensors.toml", config_path);
+    let sensor_config = load_sensor_config(&sensor_config_path).expect("Failed to load sensor config");
     println!("[config] loaded {} sensor(s)", sensor_config.sensors.len());
     
     // Create gRPC service
@@ -35,7 +37,9 @@ async fn main() {
     println!("[main] sensor tasks launched");
     
     // Start gRPC server
-    let addr = "127.0.0.1:50051".parse().unwrap();
+    let host = std::env::var("GRPC_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let port = std::env::var("GRPC_PORT").unwrap_or_else(|_| "50051".to_string());
+    let addr = format!("{}:{}", host, port).parse().unwrap();
     let server = create_grpc_server(grpc_service.as_ref().clone());
     
     println!("[gRPC] Server starting on {}", addr);

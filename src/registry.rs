@@ -8,7 +8,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub async fn init_all(sensor_config: &SensorConfig) -> Result<(Vec<Box<dyn SensorDriver>>, HashMap<String, Arc<Mutex<I2CBus>>>), String> {
-    let bus_cfg = load_bus_config("config/buses.toml").map_err(|e| e.to_string())?;
+    let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config".to_string());
+    let bus_config_path = format!("{}/buses.toml", config_path);
+    let bus_cfg = load_bus_config(&bus_config_path).map_err(|e| e.to_string())?;
 
     let mut bus_map = HashMap::new();
     for b in bus_cfg.buses.iter() {

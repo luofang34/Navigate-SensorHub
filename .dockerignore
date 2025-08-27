@@ -1,6 +1,5 @@
 # Rust build artifacts
 target/
-Cargo.lock
 
 # Git version control
 .git/
@@ -15,13 +14,13 @@ Cargo.lock
 # Environment files
 .env*
 
-# Documentation and project files (usually not needed in container)
+# Documentation (not needed in container)
 README.md
 README.txt
 CHANGELOG.md
 LICENSE
 LICENSE.txt
-*.md
+claude.md
 
 # AI conversation files
 Claude.md
