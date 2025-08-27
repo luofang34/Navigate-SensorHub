@@ -29,6 +29,7 @@ Cargo.lock
 # AI assistant conversation files
 Claude.md
 claude.md
+claude/
 gemini.md
 Gemini.md
 chatgpt.md

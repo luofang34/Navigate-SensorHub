@@ -30,7 +30,9 @@ impl SensorDriver for Lis3mdl {
     async fn init(&mut self, bus: &mut I2CBus) -> Result<(), String> {
         // Verify device identity
         let mut who_am_i_buf = [0u8; 1];
+        // println!("[{}] Reading WHO_AM_I from 0x{:02x} reg 0x{:02x}", self.id, self.address, WHO_AM_I);
         bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await.map_err(|e| e.to_string())?;
+        // println!("[{}] Got WHO_AM_I: 0x{:02x}", self.id, who_am_i_buf[0]);
         if who_am_i_buf[0] != 0x3D {
             return Err(format!("LIS3MDL WHO_AM_I check failed. Expected 0x3D, got {:#04x}", who_am_i_buf[0]));
         }
