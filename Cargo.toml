@@ -26,4 +26,5 @@ default = ["lsm6dsl", "lis3mdl", "bmp388"]
 lsm6dsl = []
 lis3mdl = []
 bmp388 = []
+icm42688p = []
 
