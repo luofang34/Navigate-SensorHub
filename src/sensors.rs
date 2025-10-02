@@ -18,6 +18,9 @@ pub trait SensorDriver: Send + Sync {
     async fn read(&self, bus: &mut I2CBus) -> SensorResult<SensorDataFrame>;
     fn id(&self) -> &str;
     fn bus(&self) -> &str;
+
+    /// Downcast to any for dynamic type checking (needed for MAVLink sensor setup)
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 #[cfg(feature = "lsm6dsl")]
@@ -28,6 +31,12 @@ pub mod lis3mdl;
 pub mod bmp388;
 #[cfg(feature = "icm42688p")]
 pub mod icm42688p;
+#[cfg(feature = "mavlink_sensors")]
+pub mod mavlink_imu;
+#[cfg(feature = "mavlink_sensors")]
+pub mod mavlink_baro;
+#[cfg(feature = "mavlink_sensors")]
+pub mod mavlink_mag;
 
 pub fn create_sensor_driver(
     driver: &str,
@@ -44,6 +53,12 @@ pub fn create_sensor_driver(
         "bmp388" => Ok(Box::new(bmp388::Bmp388::new(id, address, bus_id))),
         #[cfg(feature = "icm42688p")]
         "icm42688p" => Ok(Box::new(icm42688p::Icm42688p::new(id, address, bus_id))),
+        #[cfg(feature = "mavlink_sensors")]
+        "mavlink_imu" => Ok(Box::new(mavlink_imu::MavlinkImu::new(id, address, bus_id))),
+        #[cfg(feature = "mavlink_sensors")]
+        "mavlink_baro" => Ok(Box::new(mavlink_baro::MavlinkBaro::new(id, address, bus_id))),
+        #[cfg(feature = "mavlink_sensors")]
+        "mavlink_mag" => Ok(Box::new(mavlink_mag::MavlinkMag::new(id, address, bus_id))),
         _ => Err(SensorError::UnsupportedDriver { driver: driver.to_string() }),
     }
 }

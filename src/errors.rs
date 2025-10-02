@@ -5,7 +5,13 @@ use thiserror::Error;
 pub enum SensorError {
     #[error("I2C communication failed: {0}")]
     I2cError(#[from] i2cdev::linux::LinuxI2CError),
-    
+
+    #[error("Serial port error: {0}")]
+    SerialError(#[from] tokio_serial::Error),
+
+    #[error("MAVLink protocol error: {0}")]
+    MavlinkError(String),
+
     #[error("Sensor '{sensor}' initialization failed: {reason}")]
     InitError { sensor: String, reason: String },
     

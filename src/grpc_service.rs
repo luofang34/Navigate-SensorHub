@@ -1,4 +1,4 @@
-use crate::messages::{SensorMessage, ImuMessage, MagnetometerMessage, BarometerMessage};
+use crate::messages::SensorMessage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
@@ -7,6 +7,7 @@ use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Result};
 use tokio_stream::Stream;
 use std::pin::Pin;
+use tracing::info;
 
 // Include the generated protobuf code
 pub mod sensorhub {
@@ -178,8 +179,8 @@ impl SensorHub for SensorHubService {
         &self,
         _request: Request<SensorRequest>,
     ) -> Result<Response<Self::StreamIMUStream>> {
-        println!("[gRPC] New IMU stream client connected");
-        
+        info!("[gRPC] New IMU stream client connected");
+
         let rx = self.imu_tx.subscribe();
         let stream = BroadcastStream::new(rx).map(|item| {
             item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
@@ -192,8 +193,8 @@ impl SensorHub for SensorHubService {
         &self,
         _request: Request<SensorRequest>,
     ) -> Result<Response<Self::StreamMagnetometerStream>> {
-        println!("[gRPC] New magnetometer stream client connected");
-        
+        info!("[gRPC] New magnetometer stream client connected");
+
         let rx = self.mag_tx.subscribe();
         let stream = BroadcastStream::new(rx).map(|item| {
             item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
@@ -206,8 +207,8 @@ impl SensorHub for SensorHubService {
         &self,
         _request: Request<SensorRequest>,
     ) -> Result<Response<Self::StreamBarometerStream>> {
-        println!("[gRPC] New barometer stream client connected");
-        
+        info!("[gRPC] New barometer stream client connected");
+
         let rx = self.baro_tx.subscribe();
         let stream = BroadcastStream::new(rx).map(|item| {
             item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
@@ -220,8 +221,8 @@ impl SensorHub for SensorHubService {
         &self,
         _request: Request<SensorRequest>,
     ) -> Result<Response<Self::StreamAllStream>> {
-        println!("[gRPC] New unified stream client connected");
-        
+        info!("[gRPC] New unified stream client connected");
+
         let rx = self.all_tx.subscribe();
         let stream = BroadcastStream::new(rx).map(|item| {
             item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))

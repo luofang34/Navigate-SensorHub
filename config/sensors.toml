@@ -1,27 +1,29 @@
+# Commented out - no I2C sensor connected
+# [[sensor]]
+# id = "imu0"
+# driver = "icm42688p"
+# bus = "i2c0"
+# address = 0x69
+# frequency = 100
+
+# Flight controller sensors via MAVLink
 [[sensor]]
-id = "imu0"
-driver = "lsm6dsl"
-bus = "i2c0"
-address = 0x6a
+id = "fc_imu"
+driver = "mavlink_imu"
+bus = "serial0"
+address = 0x00  # Virtual address (not used for MAVLink)
 frequency = 100
 
 [[sensor]]
-id = "mag0"
-driver = "lis3mdl"
-bus = "i2c0"
-address = 0x1c
-frequency = 80
+id = "fc_baro"
+driver = "mavlink_baro"
+bus = "serial0"
+address = 0x01  # Virtual address
+frequency = 50
 
 [[sensor]]
-id = "static0"
-driver = "bmp388"
-bus = "i2c0"
-address = 0x77
-frequency = 80
-
-[[sensor]]
-id = "pitot0"
-driver = "bmp388"
-bus = "i2c0"
-address = 0x77
-frequency = 80
+id = "fc_mag"
+driver = "mavlink_mag"
+bus = "serial0"
+address = 0x02  # Virtual address
+frequency = 50

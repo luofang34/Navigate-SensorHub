@@ -2,6 +2,7 @@ use crate::bus::i2c::I2CBus;
 use crate::sensors::{SensorDataFrame, SensorDriver};
 use crate::errors::{SensorError, SensorResult};
 use async_trait::async_trait;
+use tracing::debug;
 
 enum PressureKind {
     Static,
@@ -167,7 +168,7 @@ impl SensorDriver for Bmp388 {
                 reason: format!("Failed to set normal mode: {}", e),
             })?;
         
-        println!("[{}] BMP388 calibration loaded", self.id);
+        debug!("[{}] BMP388 calibration loaded", self.id);
         Ok(())
     }
 
@@ -254,5 +255,9 @@ impl SensorDriver for Bmp388 {
 
     fn bus(&self) -> &str {
         &self.bus_id
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

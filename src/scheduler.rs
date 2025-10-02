@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
+use tracing::{error, warn, info};
 
 pub async fn spawn_sensor_tasks(
     sensors: Vec<Box<dyn SensorDriver>>,
@@ -17,7 +18,26 @@ pub async fn spawn_sensor_tasks(
     
     for sensor in sensors.into_iter() {
         let sensor_id = sensor.id().to_string();
-        let bus = buses.get(sensor.bus()).unwrap().clone();
+        let bus_id = sensor.bus().to_string();
+
+        // Check if this is a MAVLink sensor (doesn't need I2C bus access in scheduler)
+        let is_mavlink = bus_id.starts_with("serial");
+
+        // Get the I2C bus for I2C sensors, use a dummy for MAVLink sensors
+        let bus_opt = if is_mavlink {
+            // For MAVLink sensors, use any available I2C bus as a dummy (won't be accessed)
+            buses.values().next().cloned()
+        } else {
+            buses.get(&bus_id).cloned()
+        };
+
+        let bus = match bus_opt {
+            Some(b) => b,
+            None => {
+                error!("[scheduler] No bus available for sensor {}", sensor_id);
+                continue;
+            }
+        };
         
         // Find the sensor configuration to get frequency
         let frequency = sensor_config.sensors
@@ -30,8 +50,8 @@ pub async fn spawn_sensor_tasks(
         let mut sequence_counter = 0u64;
 
         tokio::spawn(async move {
-            println!("[{}] Starting sensor task at {}Hz", sensor_id, frequency);
-            
+            info!("[{}] Starting sensor task at {}Hz", sensor_id, frequency);
+
             loop {
                 let mut bus_lock = bus.lock().await;
                 let result = sensor.read(&mut *bus_lock).await;
@@ -95,13 +115,13 @@ pub async fn spawn_sensor_tasks(
                         // Publish all messages to gRPC service
                         for msg in messages {
                             if let Err(e) = grpc_service_clone.publish(msg).await {
-                                eprintln!("[{}] Failed to publish: {}", sensor_id, e);
+                                error!("[{}] Failed to publish: {}", sensor_id, e);
                             }
                         }
-                        
+
                     }
                     Err(e) => {
-                        eprintln!("[{}] Sensor read error: {}", sensor_id, e);
+                        warn!("[{}] Sensor read error: {}", sensor_id, e);
                     }
                 }
 

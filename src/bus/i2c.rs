@@ -13,28 +13,22 @@ impl I2CBus {
 
     pub async fn read_bytes(&mut self, address: u8, reg: u8, buf: &mut [u8]) -> Result<(), LinuxI2CError> {
         self.device.set_slave_address(address as u16)?;
-        
-        // Debug logging (commented out for production)
-        // println!("[I2C] Reading from addr=0x{:02x} reg=0x{:02x} len={}", address, reg, buf.len());
-        
+
         if buf.len() == 1 {
             // Use SMBus read byte data for single byte reads
             let byte = self.device.smbus_read_byte_data(reg)?;
             buf[0] = byte;
-            // println!("[I2C] Read single byte: 0x{:02x}", byte);
         } else {
             // Use SMBus block read for multi-byte reads
             let temp_buf = self.device.smbus_read_i2c_block_data(reg, buf.len() as u8)?;
             buf.copy_from_slice(&temp_buf);
-            // println!("[I2C] Read {} bytes: {:02x?}", buf.len(), buf);
         }
-        
+
         Ok(())
     }
 
     pub async fn write_byte(&mut self, address: u8, reg: u8, byte: u8) -> Result<(), LinuxI2CError> {
         self.device.set_slave_address(address as u16)?;
-        // println!("[I2C] Writing to addr=0x{:02x} reg=0x{:02x} byte=0x{:02x}", address, reg, byte);
         self.device.smbus_write_byte_data(reg, byte)
     }
 }
