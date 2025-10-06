@@ -7,6 +7,32 @@ use std::collections::HashSet;
 use tracing::{debug, trace, warn, info, error};
 
 /// Detected sensor types from MAVLink stream
+///
+/// TODO: Expand MAVLink support to additional message types commonly sent by flight controllers.
+/// This requires changes in BOTH bus (auto-detection) AND sensors (message handlers):
+///
+/// Bus layer (this file):
+///   - Add DetectedSensor enum variants for new message types
+///   - Add match arms in message loop (line 68+) for auto-detection
+///
+/// Sensor layer (sensors/mavlink.rs):
+///   - Add MavlinkSensorType variants for new sensor types
+///   - Add message conversion functions (convert_*_to_frame)
+///   - Add match arms in message loop (line 89+) to handle messages
+///   - Add gRPC message types in messages.rs if needed (e.g., Attitude)
+///
+/// Priority message types to add:
+/// - ATTITUDE: Basic euler angles (roll/pitch/yaw) + rates - simpler than quaternions, widely used
+/// - RAW_IMU: Raw sensor readings (if FC sends them separately from SCALED/HIGHRES)
+/// - ALTITUDE: Altitude data with different sources (barometric, GPS, etc.)
+/// - VFR_HUD: Airspeed, groundspeed, heading, climb rate, throttle
+/// - LOCAL_POSITION_NED: Local position in NED frame (for navigation)
+/// - VIBRATION: IMU vibration levels (useful for diagnosing mechanical issues)
+/// - GPS_RAW_INT: Raw GPS data (position, satellites, fix type)
+/// - GLOBAL_POSITION_INT: Fused global position estimate
+///
+/// Currently supported:
+/// ✅ SCALED_IMU/2/3, HIGHRES_IMU, SCALED_PRESSURE, ATTITUDE_QUATERNION
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DetectedSensor {
     ScaledImu,
@@ -98,8 +124,9 @@ impl MavlinkConnection {
                                 trace!("[MAVLink] Heartbeat received");
                                 None
                             }
-                            _ => {
-                                trace!("[MAVLink] Other message type received");
+                            other => {
+                                // Log unhandled message types at trace level (use RUST_LOG=trace to see them)
+                                trace!("[MAVLink] Unhandled message: {:?}", other);
                                 None
                             }
                         };

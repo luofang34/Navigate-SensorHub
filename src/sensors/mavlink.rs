@@ -12,6 +12,8 @@ use tokio::sync::Mutex;
 use tracing::{debug, trace, info, error};
 
 /// MAVLink sensor type enum - defines which message type this sensor processes
+///
+/// See bus/mavlink.rs TODO for implementation guidance on adding new message types.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MavlinkSensorType {
     /// IMU sensor with instance number (0=SCALED_IMU, 1=SCALED_IMU2, 2=SCALED_IMU3)
@@ -258,7 +260,8 @@ fn frame_to_grpc_messages(frame: SensorDataFrame, header: Header, sensor_id: &st
                sensor_id, pressure, temperature, altitude);
     }
 
-    // TODO: Add Attitude message type to messages.rs and publish quaternion data
+    // Note: Attitude quaternion data is currently dropped - add Attitude message type
+    // to messages.rs if needed (see bus/mavlink.rs TODO for adding new message types)
 
     messages
 }
