@@ -149,14 +149,31 @@ pub async fn init_all(
                         "[registry] Auto-detecting flight controller for Serial/MAVLink bus: {}",
                         b.id
                     );
-                    let detected_path = SerialBus::detect_flight_controller().await.map_err(|e| {
-                        error!("[registry] Flight controller auto-detection failed: {}", e);
-                        RegistryError::DriverCreationError(SensorError::SerialError(e.into()))
-                    })?;
-                    info!(
-                        "[registry] Flight controller auto-detected at: {}",
-                        detected_path
-                    );
+
+                    // Retry auto-detection with backoff if no FC found initially
+                    let mut backoff_ms = 100u64;
+                    const MAX_BACKOFF_MS: u64 = 2000;
+                    let detected_path = loop {
+                        match SerialBus::detect_flight_controller().await {
+                            Ok(path) => {
+                                info!(
+                                    "[registry] Flight controller auto-detected at: {}",
+                                    path
+                                );
+                                break path;
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "[registry] Flight controller not found ({}), retrying in {}ms...",
+                                    e, backoff_ms
+                                );
+                                tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms))
+                                    .await;
+                                backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+                            }
+                        }
+                    };
+
                     let serial = SerialBus::new(&detected_path).map_err(|e| {
                         error!("[registry] Failed to open serial port {}: {}", detected_path, e);
                         RegistryError::DriverCreationError(SensorError::SerialError(e.into()))

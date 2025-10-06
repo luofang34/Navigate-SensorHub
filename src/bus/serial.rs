@@ -38,9 +38,23 @@ impl SerialBus {
         self.port
     }
 
-    /// Auto-detect a flight controller by probing serial ports for MAVLink HEARTBEAT messages
+    /// Auto-detect flight controller(s) by probing serial ports in parallel for MAVLink HEARTBEAT messages
     /// Returns the path of the first device that responds with a valid flight controller heartbeat
+    ///
+    /// Note: Probes all ports simultaneously for fastest detection (important for reconnection speed)
     pub async fn detect_flight_controller() -> io::Result<String> {
+        let all_fcs = Self::detect_all_flight_controllers().await?;
+        all_fcs.into_iter().next().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "No flight controller found on any serial port",
+            )
+        })
+    }
+
+    /// Auto-detect all flight controllers by probing serial ports in parallel
+    /// Returns a vector of all detected FC paths (for future multi-FC redundancy support)
+    pub async fn detect_all_flight_controllers() -> io::Result<Vec<String>> {
         info!("[SerialBus] Starting flight controller auto-detection...");
 
         let ports = tokio_serial::available_ports().map_err(|e| {
@@ -57,38 +71,80 @@ impl SerialBus {
             ));
         }
 
-        info!("[SerialBus] Found {} serial port(s), probing for flight controllers...", ports.len());
+        info!(
+            "[SerialBus] Found {} serial port(s), probing in parallel for flight controllers...",
+            ports.len()
+        );
 
-        for port_info in ports {
+        // Filter out known non-FC devices
+        let candidate_ports: Vec<_> = ports
+            .into_iter()
+            .filter(|port_info| {
+                let port_name = &port_info.port_name;
+                let skip = port_name.contains("Bluetooth") || port_name.contains("debug-console");
+                if skip {
+                    debug!("[SerialBus] Skipping non-FC device: {}", port_name);
+                }
+                !skip
+            })
+            .collect();
+
+        if candidate_ports.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "No candidate serial ports found (all filtered out)",
+            ));
+        }
+
+        debug!(
+            "[SerialBus] Probing {} candidate port(s) in parallel...",
+            candidate_ports.len()
+        );
+
+        // Probe all ports in parallel using tokio::spawn
+        let mut probe_tasks = Vec::new();
+        for port_info in candidate_ports {
             let port_name = port_info.port_name.clone();
-
-            // Skip known non-flight-controller devices
-            if port_name.contains("Bluetooth") || port_name.contains("debug-console") {
-                debug!("[SerialBus] Skipping non-FC device: {}", port_name);
-                continue;
-            }
-
-            debug!("[SerialBus] Probing {} for MAVLink heartbeat...", port_name);
-
-            // Try to probe this port for a flight controller
-            match Self::probe_for_flight_controller(&port_name).await {
-                Ok(true) => {
-                    info!("[SerialBus] ✓ Flight controller detected on: {}", port_name);
-                    return Ok(port_name);
+            probe_tasks.push(tokio::spawn(async move {
+                debug!("[SerialBus] Probing {} for MAVLink heartbeat...", port_name);
+                match Self::probe_for_flight_controller(&port_name).await {
+                    Ok(true) => {
+                        info!("[SerialBus] ✓ Flight controller detected on: {}", port_name);
+                        Some(port_name)
+                    }
+                    Ok(false) => {
+                        debug!("[SerialBus] ✗ No valid FC heartbeat on: {}", port_name);
+                        None
+                    }
+                    Err(e) => {
+                        debug!("[SerialBus] ✗ Failed to probe {}: {}", port_name, e);
+                        None
+                    }
                 }
-                Ok(false) => {
-                    debug!("[SerialBus] ✗ No valid FC heartbeat on: {}", port_name);
-                }
-                Err(e) => {
-                    debug!("[SerialBus] ✗ Failed to probe {}: {}", port_name, e);
-                }
+            }));
+        }
+
+        // Wait for all probe tasks to complete
+        let mut detected_fcs = Vec::new();
+        for task in probe_tasks {
+            if let Ok(Some(port_path)) = task.await {
+                detected_fcs.push(port_path);
             }
         }
 
-        Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "No flight controller found on any serial port",
-        ))
+        if detected_fcs.is_empty() {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "No flight controller found on any serial port",
+            ))
+        } else {
+            info!(
+                "[SerialBus] Detected {} flight controller(s): {:?}",
+                detected_fcs.len(),
+                detected_fcs
+            );
+            Ok(detected_fcs)
+        }
     }
 
     /// Probe a single serial port for a valid flight controller heartbeat

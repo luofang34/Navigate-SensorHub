@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Detected sensor types from MAVLink stream
 ///
@@ -49,9 +49,11 @@ pub struct MavlinkConnection {
     tx: broadcast::Sender<mavlink::common::MavMessage>,
     /// Set of detected sensors
     detected_sensors: Arc<Mutex<HashSet<DetectedSensor>>>,
-    /// Last known working port path (for reconnection)
+    /// Last known working port path (used internally by reconnection logic in receive_loop)
+    #[allow(dead_code)]
     port_path: Arc<Mutex<String>>,
-    /// Whether this connection was auto-detected (enables dynamic port discovery)
+    /// Whether this connection was auto-detected (used internally by reconnection logic in receive_loop)
+    #[allow(dead_code)]
     auto_detect: bool,
 }
 
@@ -191,11 +193,23 @@ impl MavlinkConnection {
                     Err(e) => {
                         match e {
                             mavlink::error::MessageReadError::Io(io_err) => {
-                                error!("[MAVLink] I/O error: {}", io_err);
+                                // Provide user-friendly error messages for common cases
+                                let error_msg = match io_err.raw_os_error() {
+                                    Some(6) => "Flight controller disconnected (device not configured)",
+                                    Some(5) => "Flight controller disconnected (I/O error)",
+                                    _ => {
+                                        if io_err.kind() == std::io::ErrorKind::BrokenPipe {
+                                            "Flight controller disconnected (broken pipe)"
+                                        } else {
+                                            "Flight controller connection lost"
+                                        }
+                                    }
+                                };
+                                warn!("[MAVLink] {}", error_msg);
 
                                 // Connection lost - attempt to reconnect
                                 info!(
-                                    "[MAVLink] Connection lost, attempting reconnection in {}ms...",
+                                    "[MAVLink] Attempting reconnection in {}ms...",
                                     backoff_ms
                                 );
                                 tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms))
