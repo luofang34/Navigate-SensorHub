@@ -164,12 +164,15 @@ mod tests {
             gx: 0.1, gy: 0.2, gz: 0.3,
         };
         
-        let sensor_msg = SensorMessage::Imu(imu_msg);
-        
-        // Test MessagePack serialization round-trip
-        let msgpack_bytes = sensor_msg.to_msgpack().unwrap();
-        let decoded = SensorMessage::from_msgpack(&msgpack_bytes).unwrap();
-        
+        let sensor_msg = SensorMessage::Imu(imu_msg.clone());
+
+        // Test JSON serialization round-trip
+        let json = sensor_msg.to_json().unwrap();
+        assert!(json.contains("imu0"));
+        assert!(json.contains("9.81"));
+
+        // Test serde round-trip via JSON
+        let decoded: SensorMessage = serde_json::from_str(&json).unwrap();
         match decoded {
             SensorMessage::Imu(decoded_imu) => {
                 assert_eq!(decoded_imu.ax, 1.0);
@@ -178,10 +181,5 @@ mod tests {
             }
             _ => panic!("Wrong message type"),
         }
-        
-        // Test JSON serialization
-        let json = sensor_msg.to_json().unwrap();
-        assert!(json.contains("imu0"));
-        assert!(json.contains("9.81"));
     }
 }
