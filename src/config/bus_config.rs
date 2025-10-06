@@ -20,7 +20,7 @@ pub struct BusEntry {
 /// Load bus config file
 pub fn load_bus_config(path: &str) -> Result<BusConfig, std::io::Error> {
     let content = fs::read_to_string(path)?;
-    let parsed: BusConfig = toml::from_str(&content)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let parsed: BusConfig =
+        toml::from_str(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     Ok(parsed)
 }

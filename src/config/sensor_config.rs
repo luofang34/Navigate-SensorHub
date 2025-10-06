@@ -21,7 +21,7 @@ pub struct SensorEntry {
 /// Loads config from TOML file
 pub fn load_sensor_config(path: &str) -> Result<SensorConfig, std::io::Error> {
     let content = fs::read_to_string(path)?;
-    let parsed: SensorConfig = toml::from_str(&content)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let parsed: SensorConfig =
+        toml::from_str(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     Ok(parsed)
 }

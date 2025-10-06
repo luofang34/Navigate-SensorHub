@@ -31,16 +31,16 @@ impl Header {
     /// Create a new header with current timestamps
     pub fn new(device_id: String, sensor_id: String, frame_id: String, seq: u64) -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
-        
+
         let now_utc = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
-        
+
         // Get monotonic time using tokio's Instant
         let mono_start = std::time::Instant::now();
         let t_mono_ns = mono_start.elapsed().as_nanos() as u64;
-        
+
         Self {
             device_id,
             sensor_id,
@@ -116,13 +116,12 @@ impl SensorMessage {
             SensorMessage::Barometer(msg) => &msg.h,
         }
     }
-    
+
     /// Get the sensor ID from any sensor message
     pub fn sensor_id(&self) -> &str {
         &self.header().sensor_id
     }
-    
-    
+
     /// Serialize to JSON for debugging
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
@@ -141,7 +140,7 @@ mod tests {
             "base_link".to_string(),
             42,
         );
-        
+
         assert_eq!(header.device_id, "test_device");
         assert_eq!(header.sensor_id, "imu0");
         assert_eq!(header.seq, 42);
@@ -157,13 +156,17 @@ mod tests {
             "base_link".to_string(),
             1,
         );
-        
+
         let imu_msg = ImuMessage {
             h: header,
-            ax: 1.0, ay: 2.0, az: 9.81,
-            gx: 0.1, gy: 0.2, gz: 0.3,
+            ax: 1.0,
+            ay: 2.0,
+            az: 9.81,
+            gx: 0.1,
+            gy: 0.2,
+            gz: 0.3,
         };
-        
+
         let sensor_msg = SensorMessage::Imu(imu_msg.clone());
 
         // Test JSON serialization round-trip

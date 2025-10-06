@@ -1,10 +1,10 @@
 use super::serial::SerialBus;
 use mavlink;
-use tokio::sync::broadcast;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::collections::HashSet;
-use tracing::{debug, trace, warn, info, error};
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tokio::sync::Mutex;
+use tracing::{debug, error, info, trace, warn};
 
 /// Detected sensor types from MAVLink stream
 ///
@@ -73,12 +73,18 @@ impl MavlinkConnection {
                 // Auto-detect MAVLink v1 (0xFE) or v2 (0xFD) protocol version
                 match mavlink::read_versioned_msg_async::<mavlink::common::MavMessage, _>(
                     &mut peek_reader,
-                    mavlink::ReadVersion::Any
-                ).await {
+                    mavlink::ReadVersion::Any,
+                )
+                .await
+                {
                     Ok((header, msg)) => {
                         // Successfully parsed a MAVLink message (auto-detected version)
-                        trace!("[MAVLink] Received message from sys={} comp={}: {:?}",
-                               header.system_id, header.component_id, msg);
+                        trace!(
+                            "[MAVLink] Received message from sys={} comp={}: {:?}",
+                            header.system_id,
+                            header.component_id,
+                            msg
+                        );
 
                         // Auto-detect sensors and log
                         let sensor_type = match &msg {
@@ -115,9 +121,10 @@ impl MavlinkConnection {
                                 Some(DetectedSensor::AttitudeQuaternion)
                             }
                             mavlink::common::MavMessage::HIGHRES_IMU(imu) => {
-                                debug!("[MAVLink] HIGHRES_IMU: acc=({},{},{}), gyro=({},{},{})",
-                                       imu.xacc, imu.yacc, imu.zacc,
-                                       imu.xgyro, imu.ygyro, imu.zgyro);
+                                debug!(
+                                    "[MAVLink] HIGHRES_IMU: acc=({},{},{}), gyro=({},{},{})",
+                                    imu.xacc, imu.yacc, imu.zacc, imu.xgyro, imu.ygyro, imu.zgyro
+                                );
                                 Some(DetectedSensor::HighresImu)
                             }
                             mavlink::common::MavMessage::HEARTBEAT(_) => {
@@ -165,7 +172,10 @@ impl MavlinkConnection {
             }
         });
 
-        Self { tx, detected_sensors }
+        Self {
+            tx,
+            detected_sensors,
+        }
     }
 
     /// Subscribe to MAVLink messages from this connection

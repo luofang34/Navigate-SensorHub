@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::bus::i2c::I2CError;
+use thiserror::Error;
 
 /// Comprehensive error types for the Navigate SensorHub
 #[derive(Error, Debug)]
@@ -15,30 +15,34 @@ pub enum SensorError {
 
     #[error("Sensor '{sensor}' initialization failed: {reason}")]
     InitError { sensor: String, reason: String },
-    
+
     #[error("Sensor '{sensor}' read failed: {reason}")]
     ReadError { sensor: String, reason: String },
-    
+
     #[error("Invalid sensor configuration for '{sensor}': {reason}")]
     ConfigError { sensor: String, reason: String },
-    
+
     #[error("Sensor '{sensor}' returned invalid data: {reason}")]
     DataError { sensor: String, reason: String },
-    
+
     #[error("Sensor '{sensor}' calibration failed: {reason}")]
     CalibrationError { sensor: String, reason: String },
-    
+
     #[error("Unsupported sensor driver: '{driver}'")]
     UnsupportedDriver { driver: String },
-    
+
     #[error("Bus '{bus}' not found or unavailable")]
     BusNotFound { bus: String },
-    
+
     #[error("Bus '{bus}' communication timeout after {timeout_ms}ms")]
     BusTimeout { bus: String, timeout_ms: u64 },
-    
+
     #[error("Sensor '{sensor}' wrong chip ID: expected {expected:#04x}, got {actual:#04x}")]
-    WrongChipId { sensor: String, expected: u8, actual: u8 },
+    WrongChipId {
+        sensor: String,
+        expected: u8,
+        actual: u8,
+    },
 }
 
 /// Configuration-related errors
@@ -50,16 +54,16 @@ pub enum ConfigError {
         #[source]
         source: std::io::Error,
     },
-    
+
     #[error("Invalid configuration format: {0}")]
     FormatError(#[from] toml::de::Error),
-    
+
     #[error("Missing required configuration field: {field}")]
     MissingField { field: String },
-    
+
     #[error("Invalid configuration value for '{field}': {reason}")]
     InvalidValue { field: String, reason: String },
-    
+
     #[error("Configuration validation failed: {0}")]
     ValidationError(String),
 }
@@ -69,16 +73,16 @@ pub enum ConfigError {
 pub enum ServiceError {
     #[error("gRPC server failed to start: {0}")]
     ServerStartError(#[from] tonic::transport::Error),
-    
+
     #[error("Failed to publish sensor data: {reason}")]
     PublishError { reason: String },
-    
+
     #[error("Invalid gRPC request: {reason}")]
     InvalidRequest { reason: String },
-    
+
     #[error("Sensor data conversion failed: {0}")]
     ConversionError(String),
-    
+
     #[error("No active subscribers for sensor data")]
     NoSubscribers,
 }
@@ -88,13 +92,13 @@ pub enum ServiceError {
 pub enum RegistryError {
     #[error("Sensor registration failed: {0}")]
     RegistrationError(#[source] SensorError),
-    
+
     #[error("Bus initialization failed: {0}")]
     BusInitError(#[from] ConfigError),
-    
+
     #[error("Failed to create sensor driver: {0}")]
     DriverCreationError(#[source] SensorError),
-    
+
     #[error("Resource cleanup failed: {reason}")]
     CleanupError { reason: String },
 }

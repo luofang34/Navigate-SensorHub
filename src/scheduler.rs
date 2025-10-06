@@ -1,13 +1,13 @@
-use crate::sensors::SensorDriver;
 use crate::bus::i2c::I2CBus;
 use crate::config::sensor_config::SensorConfig;
-use crate::messages::{Header, ImuMessage, MagnetometerMessage, BarometerMessage, SensorMessage};
 use crate::grpc_service::SensorHubService;
+use crate::messages::{BarometerMessage, Header, ImuMessage, MagnetometerMessage, SensorMessage};
+use crate::sensors::SensorDriver;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
-use tracing::{error, warn, info};
+use tracing::{error, info, warn};
 
 pub async fn spawn_sensor_tasks(
     sensors: Vec<Box<dyn SensorDriver>>,
@@ -15,7 +15,6 @@ pub async fn spawn_sensor_tasks(
     grpc_service: Arc<SensorHubService>,
     sensor_config: &SensorConfig,
 ) {
-    
     for sensor in sensors.into_iter() {
         let sensor_id = sensor.id().to_string();
         let bus_id = sensor.bus().to_string();
@@ -36,9 +35,10 @@ pub async fn spawn_sensor_tasks(
             error!("[scheduler] No I2C bus available for sensor {}", sensor_id);
             continue;
         }
-        
+
         // Find the sensor configuration to get frequency
-        let frequency = sensor_config.sensors
+        let frequency = sensor_config
+            .sensors
             .iter()
             .find(|s| s.id == sensor_id)
             .and_then(|s| s.frequency)
@@ -68,7 +68,7 @@ pub async fn spawn_sensor_tasks(
                 match result {
                     Ok(frame) => {
                         sequence_counter += 1;
-                        
+
                         // Create header with timing metadata
                         let header = Header::new(
                             "navigate_hub".to_string(),
@@ -76,33 +76,39 @@ pub async fn spawn_sensor_tasks(
                             "sensor_frame".to_string(),
                             sequence_counter,
                         );
-                        
+
                         // Convert SensorDataFrame to appropriate message type based on data present
                         let mut messages = Vec::new();
-                        
+
                         // IMU data (accelerometer + gyroscope)
                         if let (Some(accel), Some(gyro)) = (frame.accel, frame.gyro) {
                             let imu_msg = ImuMessage {
                                 h: header.clone(),
-                                ax: accel[0], ay: accel[1], az: accel[2],
-                                gx: gyro[0], gy: gyro[1], gz: gyro[2],
+                                ax: accel[0],
+                                ay: accel[1],
+                                az: accel[2],
+                                gx: gyro[0],
+                                gy: gyro[1],
+                                gz: gyro[2],
                             };
                             messages.push(SensorMessage::Imu(imu_msg));
                         }
-                        
+
                         // Magnetometer data
                         if let Some(mag) = frame.mag {
                             let mag_msg = MagnetometerMessage {
                                 h: header.clone(),
-                                mx: mag[0], my: mag[1], mz: mag[2],
+                                mx: mag[0],
+                                my: mag[1],
+                                mz: mag[2],
                             };
                             messages.push(SensorMessage::Magnetometer(mag_msg));
                         }
-                        
+
                         // Barometer data (use static pressure primarily)
                         if let Some(pressure) = frame.pressure_static.or(frame.pressure_pitot) {
                             let temperature = frame.temp.unwrap_or(20.0); // Default 20°C
-                            
+
                             // Calculate altitude using standard atmosphere (ISA)
                             // h = 44330 * (1 - (P/P0)^0.1903)
                             let altitude = if pressure > 0.0 {
@@ -110,7 +116,7 @@ pub async fn spawn_sensor_tasks(
                             } else {
                                 0.0
                             };
-                            
+
                             let baro_msg = BarometerMessage {
                                 h: header.clone(),
                                 pressure,
@@ -119,14 +125,13 @@ pub async fn spawn_sensor_tasks(
                             };
                             messages.push(SensorMessage::Barometer(baro_msg));
                         }
-                        
+
                         // Publish all messages to gRPC service
                         for msg in messages {
                             if let Err(e) = grpc_service_clone.publish(msg).await {
                                 error!("[{}] Failed to publish: {}", sensor_id, e);
                             }
                         }
-
                     }
                     Err(e) => {
                         warn!("[{}] Sensor read error: {}", sensor_id, e);

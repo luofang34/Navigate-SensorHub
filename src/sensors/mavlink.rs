@@ -1,15 +1,15 @@
 use super::{SensorDataFrame, SensorDriver};
 use crate::bus::i2c::I2CBus;
 use crate::bus::mavlink::MavlinkConnection;
-use crate::grpc_service::SensorHubService;
-use crate::messages::{Header, ImuMessage, BarometerMessage, SensorMessage};
 use crate::errors::{SensorError, SensorResult};
+use crate::grpc_service::SensorHubService;
+use crate::messages::{BarometerMessage, Header, ImuMessage, SensorMessage};
 use async_trait::async_trait;
 use mavlink::common::MavMessage;
-use tokio::sync::broadcast;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tokio::sync::Mutex;
-use tracing::{debug, trace, info, error};
+use tracing::{debug, error, info, trace};
 
 /// MAVLink sensor type enum - defines which message type this sensor processes
 ///
@@ -63,30 +63,35 @@ impl MavlinkSensor {
 
     /// Start the message receive loop - publishes directly to gRPC
     fn start_message_loop(&self, mut rx: broadcast::Receiver<MavMessage>) {
-        let grpc = self.grpc_service.clone()
+        let grpc = self
+            .grpc_service
+            .clone()
             .expect("gRPC service must be set before starting message loop");
         let sensor_type = self.sensor_type.clone();
         let sensor_id = self.id.clone();
         let seq = self.sequence_counter.clone();
 
         tokio::spawn(async move {
-            info!("[{}] Starting MAVLink message loop for {:?}", sensor_id, sensor_type);
+            info!(
+                "[{}] Starting MAVLink message loop for {:?}",
+                sensor_id, sensor_type
+            );
 
             while let Ok(msg) = rx.recv().await {
                 // Match on BOTH sensor type AND message type - only process matching pairs
                 let frame_opt = match (&sensor_type, &msg) {
                     // IMU instance 0 - SCALED_IMU
-                    (MavlinkSensorType::Imu{instance: 0}, MavMessage::SCALED_IMU(imu)) => {
+                    (MavlinkSensorType::Imu { instance: 0 }, MavMessage::SCALED_IMU(imu)) => {
                         trace!("[{}] Received SCALED_IMU", sensor_id);
                         Some(convert_scaled_imu_to_frame(imu))
                     }
                     // IMU instance 1 - SCALED_IMU2
-                    (MavlinkSensorType::Imu{instance: 1}, MavMessage::SCALED_IMU2(imu)) => {
+                    (MavlinkSensorType::Imu { instance: 1 }, MavMessage::SCALED_IMU2(imu)) => {
                         trace!("[{}] Received SCALED_IMU2", sensor_id);
                         Some(convert_scaled_imu2_to_frame(imu))
                     }
                     // IMU instance 2 - SCALED_IMU3
-                    (MavlinkSensorType::Imu{instance: 2}, MavMessage::SCALED_IMU3(imu)) => {
+                    (MavlinkSensorType::Imu { instance: 2 }, MavMessage::SCALED_IMU3(imu)) => {
                         trace!("[{}] Received SCALED_IMU3", sensor_id);
                         Some(convert_scaled_imu3_to_frame(imu))
                     }
@@ -142,12 +147,12 @@ impl MavlinkSensor {
 fn convert_scaled_imu_to_frame(imu: &mavlink::common::SCALED_IMU_DATA) -> SensorDataFrame {
     SensorDataFrame {
         accel: Some([
-            (imu.xacc as f32 / 1000.0) * 9.81,  // milli-g to m/s²
+            (imu.xacc as f32 / 1000.0) * 9.81, // milli-g to m/s²
             (imu.yacc as f32 / 1000.0) * 9.81,
             (imu.zacc as f32 / 1000.0) * 9.81,
         ]),
         gyro: Some([
-            imu.xgyro as f32 / 1000.0,  // milli-rad/s to rad/s
+            imu.xgyro as f32 / 1000.0, // milli-rad/s to rad/s
             imu.ygyro as f32 / 1000.0,
             imu.zgyro as f32 / 1000.0,
         ]),
@@ -160,12 +165,12 @@ fn convert_scaled_imu_to_frame(imu: &mavlink::common::SCALED_IMU_DATA) -> Sensor
 fn convert_scaled_imu2_to_frame(imu: &mavlink::common::SCALED_IMU2_DATA) -> SensorDataFrame {
     SensorDataFrame {
         accel: Some([
-            (imu.xacc as f32 / 1000.0) * 9.81,  // milli-g to m/s²
+            (imu.xacc as f32 / 1000.0) * 9.81, // milli-g to m/s²
             (imu.yacc as f32 / 1000.0) * 9.81,
             (imu.zacc as f32 / 1000.0) * 9.81,
         ]),
         gyro: Some([
-            imu.xgyro as f32 / 1000.0,  // milli-rad/s to rad/s
+            imu.xgyro as f32 / 1000.0, // milli-rad/s to rad/s
             imu.ygyro as f32 / 1000.0,
             imu.zgyro as f32 / 1000.0,
         ]),
@@ -177,12 +182,12 @@ fn convert_scaled_imu2_to_frame(imu: &mavlink::common::SCALED_IMU2_DATA) -> Sens
 fn convert_scaled_imu3_to_frame(imu: &mavlink::common::SCALED_IMU3_DATA) -> SensorDataFrame {
     SensorDataFrame {
         accel: Some([
-            (imu.xacc as f32 / 1000.0) * 9.81,  // milli-g to m/s²
+            (imu.xacc as f32 / 1000.0) * 9.81, // milli-g to m/s²
             (imu.yacc as f32 / 1000.0) * 9.81,
             (imu.zacc as f32 / 1000.0) * 9.81,
         ]),
         gyro: Some([
-            imu.xgyro as f32 / 1000.0,  // milli-rad/s to rad/s
+            imu.xgyro as f32 / 1000.0, // milli-rad/s to rad/s
             imu.ygyro as f32 / 1000.0,
             imu.zgyro as f32 / 1000.0,
         ]),
@@ -193,9 +198,9 @@ fn convert_scaled_imu3_to_frame(imu: &mavlink::common::SCALED_IMU3_DATA) -> Sens
 /// Convert HIGHRES_IMU data to SensorDataFrame
 fn convert_highres_imu_to_frame(imu: &mavlink::common::HIGHRES_IMU_DATA) -> SensorDataFrame {
     SensorDataFrame {
-        accel: Some([imu.xacc, imu.yacc, imu.zacc]),  // Already in m/s²
-        gyro: Some([imu.xgyro, imu.ygyro, imu.zgyro]),  // Already in rad/s
-        temp: Some(imu.temperature),  // Already in °C
+        accel: Some([imu.xacc, imu.yacc, imu.zacc]), // Already in m/s²
+        gyro: Some([imu.xgyro, imu.ygyro, imu.zgyro]), // Already in rad/s
+        temp: Some(imu.temperature),                 // Already in °C
         ..Default::default()
     }
 }
@@ -203,13 +208,13 @@ fn convert_highres_imu_to_frame(imu: &mavlink::common::HIGHRES_IMU_DATA) -> Sens
 /// Convert SCALED_PRESSURE data to SensorDataFrame
 fn convert_pressure_to_frame(p: &mavlink::common::SCALED_PRESSURE_DATA) -> SensorDataFrame {
     SensorDataFrame {
-        pressure_static: Some(p.press_abs * 100.0),  // hPa to Pa
+        pressure_static: Some(p.press_abs * 100.0), // hPa to Pa
         pressure_pitot: if p.press_diff != 0.0 {
-            Some(p.press_diff * 100.0)  // hPa to Pa
+            Some(p.press_diff * 100.0) // hPa to Pa
         } else {
             None
         },
-        temp: Some(p.temperature as f32 / 100.0),  // centi-degrees to °C
+        temp: Some(p.temperature as f32 / 100.0), // centi-degrees to °C
         ..Default::default()
     }
 }
@@ -217,25 +222,36 @@ fn convert_pressure_to_frame(p: &mavlink::common::SCALED_PRESSURE_DATA) -> Senso
 /// Convert ATTITUDE_QUATERNION data to SensorDataFrame
 fn convert_attitude_to_frame(att: &mavlink::common::ATTITUDE_QUATERNION_DATA) -> SensorDataFrame {
     SensorDataFrame {
-        quaternion: Some([att.q1, att.q2, att.q3, att.q4]),  // w, x, y, z
-        angular_velocity_body: Some([att.rollspeed, att.pitchspeed, att.yawspeed]),  // rad/s
+        quaternion: Some([att.q1, att.q2, att.q3, att.q4]), // w, x, y, z
+        angular_velocity_body: Some([att.rollspeed, att.pitchspeed, att.yawspeed]), // rad/s
         ..Default::default()
     }
 }
 
 /// Convert SensorDataFrame to gRPC messages
-fn frame_to_grpc_messages(frame: SensorDataFrame, header: Header, sensor_id: &str) -> Vec<SensorMessage> {
+fn frame_to_grpc_messages(
+    frame: SensorDataFrame,
+    header: Header,
+    sensor_id: &str,
+) -> Vec<SensorMessage> {
     let mut messages = Vec::new();
 
     // IMU data (accelerometer + gyroscope)
     if let (Some(accel), Some(gyro)) = (frame.accel, frame.gyro) {
         let imu_msg = ImuMessage {
             h: header.clone(),
-            ax: accel[0], ay: accel[1], az: accel[2],
-            gx: gyro[0], gy: gyro[1], gz: gyro[2],
+            ax: accel[0],
+            ay: accel[1],
+            az: accel[2],
+            gx: gyro[0],
+            gy: gyro[1],
+            gz: gyro[2],
         };
         messages.push(SensorMessage::Imu(imu_msg));
-        debug!("[{}] Publishing IMU: accel={:?}, gyro={:?}", sensor_id, accel, gyro);
+        debug!(
+            "[{}] Publishing IMU: accel={:?}, gyro={:?}",
+            sensor_id, accel, gyro
+        );
     }
 
     // Barometer data
@@ -256,8 +272,10 @@ fn frame_to_grpc_messages(frame: SensorDataFrame, header: Header, sensor_id: &st
             altitude,
         };
         messages.push(SensorMessage::Barometer(baro_msg));
-        debug!("[{}] Publishing Baro: press={:.1} Pa, temp={:.1}°C, alt={:.1}m",
-               sensor_id, pressure, temperature, altitude);
+        debug!(
+            "[{}] Publishing Baro: press={:.1} Pa, temp={:.1}°C, alt={:.1}m",
+            sensor_id, pressure, temperature, altitude
+        );
     }
 
     // Note: Attitude quaternion data is currently dropped - add Attitude message type

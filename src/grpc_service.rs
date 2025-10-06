@@ -1,12 +1,12 @@
 use crate::messages::SensorMessage;
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::StreamExt;
-use tonic::{Request, Response, Status, Result};
 use tokio_stream::Stream;
-use std::pin::Pin;
+use tokio_stream::StreamExt;
+use tonic::{Request, Response, Result, Status};
 use tracing::info;
 
 // Include the generated protobuf code
@@ -16,8 +16,8 @@ pub mod sensorhub {
 
 use sensorhub::{
     sensor_hub_server::{SensorHub, SensorHubServer},
-    ImuData, MagnetometerData, BarometerData, SensorData, SensorRequest,
-    SensorStatusResponse, SensorStatus, Header,
+    BarometerData, Header, ImuData, MagnetometerData, SensorData, SensorRequest, SensorStatus,
+    SensorStatusResponse,
 };
 
 pub type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
@@ -30,7 +30,7 @@ pub struct SensorHubService {
     mag_tx: broadcast::Sender<MagnetometerData>,
     baro_tx: broadcast::Sender<BarometerData>,
     all_tx: broadcast::Sender<SensorData>,
-    
+
     // Sensor status tracking
     sensor_stats: Arc<RwLock<HashMap<String, SensorStats>>>,
 }
@@ -78,7 +78,7 @@ impl SensorHubService {
     /// Publish sensor data to appropriate streams
     pub async fn publish(&self, message: SensorMessage) -> Result<(), String> {
         let header = convert_header(message.header());
-        
+
         match message {
             SensorMessage::Imu(imu) => {
                 let imu_data = ImuData {
@@ -90,12 +90,12 @@ impl SensorHubService {
                     gy: imu.gy,
                     gz: imu.gz,
                 };
-                
+
                 // Send to IMU-specific stream
                 if let Err(_) = self.imu_tx.send(imu_data.clone()) {
                     // No active subscribers - this is fine
                 }
-                
+
                 // Send to unified stream
                 let sensor_data = SensorData {
                     data: Some(sensorhub::sensor_data::Data::Imu(imu_data)),
@@ -103,10 +103,10 @@ impl SensorHubService {
                 if let Err(_) = self.all_tx.send(sensor_data) {
                     // No active subscribers - this is fine
                 }
-                
+
                 self.update_sensor_stats(&imu.h.sensor_id, 1).await;
             }
-            
+
             SensorMessage::Magnetometer(mag) => {
                 let mag_data = MagnetometerData {
                     header: Some(header.clone()),
@@ -114,21 +114,21 @@ impl SensorHubService {
                     my: mag.my,
                     mz: mag.mz,
                 };
-                
+
                 if let Err(_) = self.mag_tx.send(mag_data.clone()) {
                     // No active subscribers - this is fine
                 }
-                
+
                 let sensor_data = SensorData {
                     data: Some(sensorhub::sensor_data::Data::Magnetometer(mag_data)),
                 };
                 if let Err(_) = self.all_tx.send(sensor_data) {
                     // No active subscribers - this is fine
                 }
-                
+
                 self.update_sensor_stats(&mag.h.sensor_id, 1).await;
             }
-            
+
             SensorMessage::Barometer(baro) => {
                 let baro_data = BarometerData {
                     header: Some(header.clone()),
@@ -136,29 +136,29 @@ impl SensorHubService {
                     temperature: baro.temperature,
                     altitude: baro.altitude,
                 };
-                
+
                 if let Err(_) = self.baro_tx.send(baro_data.clone()) {
                     // No active subscribers - this is fine
                 }
-                
+
                 let sensor_data = SensorData {
                     data: Some(sensorhub::sensor_data::Data::Barometer(baro_data)),
                 };
                 if let Err(_) = self.all_tx.send(sensor_data) {
                     // No active subscribers - this is fine
                 }
-                
+
                 self.update_sensor_stats(&baro.h.sensor_id, 1).await;
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn update_sensor_stats(&self, sensor_id: &str, message_count: u64) {
         let mut stats = self.sensor_stats.write().await;
         let entry = stats.entry(sensor_id.to_string()).or_default();
-        
+
         entry.is_active = true;
         entry.messages_sent += message_count;
         entry.last_message_time_ns = std::time::SystemTime::now()
@@ -182,10 +182,9 @@ impl SensorHub for SensorHubService {
         info!("[gRPC] New IMU stream client connected");
 
         let rx = self.imu_tx.subscribe();
-        let stream = BroadcastStream::new(rx).map(|item| {
-            item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
-        });
-        
+        let stream = BroadcastStream::new(rx)
+            .map(|item| item.map_err(|e| Status::internal(format!("Broadcast error: {}", e))));
+
         Ok(Response::new(Box::pin(stream)))
     }
 
@@ -196,10 +195,9 @@ impl SensorHub for SensorHubService {
         info!("[gRPC] New magnetometer stream client connected");
 
         let rx = self.mag_tx.subscribe();
-        let stream = BroadcastStream::new(rx).map(|item| {
-            item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
-        });
-        
+        let stream = BroadcastStream::new(rx)
+            .map(|item| item.map_err(|e| Status::internal(format!("Broadcast error: {}", e))));
+
         Ok(Response::new(Box::pin(stream)))
     }
 
@@ -210,10 +208,9 @@ impl SensorHub for SensorHubService {
         info!("[gRPC] New barometer stream client connected");
 
         let rx = self.baro_tx.subscribe();
-        let stream = BroadcastStream::new(rx).map(|item| {
-            item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
-        });
-        
+        let stream = BroadcastStream::new(rx)
+            .map(|item| item.map_err(|e| Status::internal(format!("Broadcast error: {}", e))));
+
         Ok(Response::new(Box::pin(stream)))
     }
 
@@ -224,10 +221,9 @@ impl SensorHub for SensorHubService {
         info!("[gRPC] New unified stream client connected");
 
         let rx = self.all_tx.subscribe();
-        let stream = BroadcastStream::new(rx).map(|item| {
-            item.map_err(|e| Status::internal(format!("Broadcast error: {}", e)))
-        });
-        
+        let stream = BroadcastStream::new(rx)
+            .map(|item| item.map_err(|e| Status::internal(format!("Broadcast error: {}", e))));
+
         Ok(Response::new(Box::pin(stream)))
     }
 
@@ -275,6 +271,6 @@ fn convert_header(header: &crate::messages::Header) -> Header {
 /// Create and configure gRPC server
 pub fn create_grpc_server(service: SensorHubService) -> SensorHubServer<SensorHubService> {
     SensorHubServer::new(service)
-        .max_encoding_message_size(1024 * 1024)  // 1MB max message size
+        .max_encoding_message_size(1024 * 1024) // 1MB max message size
         .max_decoding_message_size(1024 * 1024)
 }

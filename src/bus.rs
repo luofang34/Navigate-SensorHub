@@ -1,8 +1,8 @@
 #[cfg(feature = "lsm6dsl")]
 pub mod i2c;
 
-pub mod serial;
 pub mod mavlink;
+pub mod serial;
 
 /// Bus type enum for different communication interfaces
 #[derive(Debug, Clone)]

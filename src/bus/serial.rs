@@ -1,5 +1,5 @@
-use tokio_serial::{SerialPortBuilderExt, SerialStream};
 use std::io;
+use tokio_serial::{SerialPortBuilderExt, SerialStream};
 
 /// Serial port wrapper for async communication
 pub struct SerialBus {
@@ -16,8 +16,7 @@ impl SerialBus {
 
     /// Create a new serial bus connection with custom baud rate
     pub fn new_with_baud(path: &str, baud_rate: u32) -> io::Result<Self> {
-        let port = tokio_serial::new(path, baud_rate)
-            .open_native_async()?;
+        let port = tokio_serial::new(path, baud_rate).open_native_async()?;
 
         Ok(Self {
             port,

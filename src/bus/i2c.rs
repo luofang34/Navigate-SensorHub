@@ -1,7 +1,7 @@
 #[cfg(target_os = "linux")]
-use i2cdev::linux::{LinuxI2CDevice, LinuxI2CError};
-#[cfg(target_os = "linux")]
 use i2cdev::core::I2CDevice;
+#[cfg(target_os = "linux")]
+use i2cdev::linux::{LinuxI2CDevice, LinuxI2CError};
 
 /// I2C bus error type - platform specific
 #[cfg(target_os = "linux")]
@@ -39,7 +39,12 @@ impl I2CBus {
         Ok(Self { device })
     }
 
-    pub async fn read_bytes(&mut self, address: u8, reg: u8, buf: &mut [u8]) -> Result<(), I2CError> {
+    pub async fn read_bytes(
+        &mut self,
+        address: u8,
+        reg: u8,
+        buf: &mut [u8],
+    ) -> Result<(), I2CError> {
         self.device.set_slave_address(address as u16)?;
 
         if buf.len() == 1 {
@@ -48,7 +53,9 @@ impl I2CBus {
             buf[0] = byte;
         } else {
             // Use SMBus block read for multi-byte reads
-            let temp_buf = self.device.smbus_read_i2c_block_data(reg, buf.len() as u8)?;
+            let temp_buf = self
+                .device
+                .smbus_read_i2c_block_data(reg, buf.len() as u8)?;
             buf.copy_from_slice(&temp_buf);
         }
 
@@ -64,10 +71,18 @@ impl I2CBus {
 #[cfg(not(target_os = "linux"))]
 impl I2CBus {
     pub fn new(_path: &str) -> Result<Self, I2CError> {
-        Err(I2CError("I2C is only supported on Linux. For macOS, use MAVLink-only configuration.".to_string()))
+        Err(I2CError(
+            "I2C is only supported on Linux. For macOS, use MAVLink-only configuration."
+                .to_string(),
+        ))
     }
 
-    pub async fn read_bytes(&mut self, _address: u8, _reg: u8, _buf: &mut [u8]) -> Result<(), I2CError> {
+    pub async fn read_bytes(
+        &mut self,
+        _address: u8,
+        _reg: u8,
+        _buf: &mut [u8],
+    ) -> Result<(), I2CError> {
         Err(I2CError("I2C is only supported on Linux".to_string()))
     }
 
