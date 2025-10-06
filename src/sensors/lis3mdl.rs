@@ -22,7 +22,11 @@ pub struct Lis3mdl {
 
 impl Lis3mdl {
     pub fn new(id: String, address: u8, bus_id: String) -> Self {
-        Self { id, address, bus_id }
+        Self {
+            id,
+            address,
+            bus_id,
+        }
     }
 }
 
@@ -31,8 +35,9 @@ impl SensorDriver for Lis3mdl {
     async fn init(&mut self, bus: &mut I2CBus) -> SensorResult<()> {
         // Verify device identity
         let mut who_am_i_buf = [0u8; 1];
-        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await?;
-        
+        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf)
+            .await?;
+
         if who_am_i_buf[0] != 0x3D {
             return Err(SensorError::WrongChipId {
                 sensor: self.id.clone(),
@@ -43,25 +48,29 @@ impl SensorDriver for Lis3mdl {
 
         // Configure magnetometer:
         // CTRL_REG1: Temp sensor disabled, medium-performance mode, 80 Hz ODR
-        bus.write_byte(self.address, CTRL_REG1, 0b01011100).await
+        bus.write_byte(self.address, CTRL_REG1, 0b01011100)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to configure CTRL_REG1: {}", e),
             })?;
         // CTRL_REG2: +/- 4 gauss full scale
-        bus.write_byte(self.address, CTRL_REG2, 0b00000000).await
+        bus.write_byte(self.address, CTRL_REG2, 0b00000000)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to configure CTRL_REG2: {}", e),
             })?;
         // CTRL_REG3: Continuous-conversion mode
-        bus.write_byte(self.address, CTRL_REG3, 0b00000000).await
+        bus.write_byte(self.address, CTRL_REG3, 0b00000000)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to configure CTRL_REG3: {}", e),
             })?;
         // CTRL_REG4: Z-axis medium-performance mode
-        bus.write_byte(self.address, CTRL_REG4, 0b00000100).await
+        bus.write_byte(self.address, CTRL_REG4, 0b00000100)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to configure CTRL_REG4: {}", e),
@@ -75,7 +84,8 @@ impl SensorDriver for Lis3mdl {
 
         // Read magnetometer data
         let mut mag_buf = [0u8; 6];
-        bus.read_bytes(self.address, OUT_X_L, &mut mag_buf).await
+        bus.read_bytes(self.address, OUT_X_L, &mut mag_buf)
+            .await
             .map_err(|e| SensorError::ReadError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to read magnetometer data: {}", e),
@@ -102,5 +112,9 @@ impl SensorDriver for Lis3mdl {
 
     fn bus(&self) -> &str {
         &self.bus_id
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

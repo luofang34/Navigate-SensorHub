@@ -1,7 +1,8 @@
 use crate::bus::i2c::I2CBus;
-use crate::sensors::{SensorDataFrame, SensorDriver};
 use crate::errors::{SensorError, SensorResult};
+use crate::sensors::{SensorDataFrame, SensorDriver};
 use async_trait::async_trait;
+use tracing::debug;
 
 enum PressureKind {
     Static,
@@ -15,7 +16,7 @@ struct Bmp388Calibration {
     t1: f64,
     t2: f64,
     t3: f64,
-    
+
     // Pressure compensation coefficients
     p1: f64,
     p2: f64,
@@ -45,7 +46,13 @@ impl Bmp388 {
         } else {
             PressureKind::Static
         };
-        Self { id, address, bus_id, kind, calibration: None }
+        Self {
+            id,
+            address,
+            bus_id,
+            kind,
+            calibration: None,
+        }
     }
 }
 
@@ -55,7 +62,7 @@ impl SensorDriver for Bmp388 {
         // Check chip ID (should be 0x50)
         let mut buf = [0u8; 1];
         bus.read_bytes(self.address, 0x00, &mut buf).await?;
-        
+
         if buf[0] != 0x50 {
             return Err(SensorError::WrongChipId {
                 sensor: self.id.clone(),
@@ -65,7 +72,8 @@ impl SensorDriver for Bmp388 {
         }
 
         // Soft reset (0x7E = 0xB6)
-        bus.write_byte(self.address, 0x7E, 0xB6).await
+        bus.write_byte(self.address, 0x7E, 0xB6)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to reset sensor: {}", e),
@@ -74,17 +82,18 @@ impl SensorDriver for Bmp388 {
 
         // Read calibration coefficients (0x31 to 0x45)
         let mut cal_buf = [0u8; 21];
-        bus.read_bytes(self.address, 0x31, &mut cal_buf).await
+        bus.read_bytes(self.address, 0x31, &mut cal_buf)
+            .await
             .map_err(|e| SensorError::CalibrationError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to read calibration data: {}", e),
             })?;
-        
+
         // Parse calibration data according to BMP388 datasheet
         let t1 = (cal_buf[1] as u16) << 8 | cal_buf[0] as u16;
         let t2 = (cal_buf[3] as u16) << 8 | cal_buf[2] as u16;
         let t3 = cal_buf[4] as i8;
-        
+
         let p1 = (cal_buf[6] as i16) << 8 | cal_buf[5] as i16;
         let p2 = (cal_buf[8] as i16) << 8 | cal_buf[7] as i16;
         let p3 = cal_buf[9] as i8;
@@ -96,13 +105,13 @@ impl SensorDriver for Bmp388 {
         let p9 = (cal_buf[18] as i16) << 8 | cal_buf[17] as i16;
         let p10 = cal_buf[19] as i8;
         let p11 = cal_buf[20] as i8;
-        
+
         // Store raw calibration values - scaling will be done during compensation
         self.calibration = Some(Bmp388Calibration {
             t1: t1 as f64,
             t2: t2 as f64,
             t3: t3 as f64,
-            
+
             p1: p1 as f64,
             p2: p2 as f64,
             p3: p3 as f64,
@@ -118,69 +127,78 @@ impl SensorDriver for Bmp388 {
 
         // Set oversampling configuration
         // 0x1C = OSR: [5:3]=temp_os x1 (000), [2:0]=press_os x4 (010) = 0x02
-        bus.write_byte(self.address, 0x1C, 0x02).await
+        bus.write_byte(self.address, 0x1C, 0x02)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to set oversampling: {}", e),
             })?;
-        
+
         // Set output data rate to 50Hz
         // 0x1D = ODR: 50Hz = 0x02
-        bus.write_byte(self.address, 0x1D, 0x02).await
+        bus.write_byte(self.address, 0x1D, 0x02)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to set output data rate: {}", e),
             })?;
-        
+
         // Set IIR filter
         // 0x1F = CONFIG: filter_coeff=1 (001) = 0x00
-        bus.write_byte(self.address, 0x1F, 0x00).await
+        bus.write_byte(self.address, 0x1F, 0x00)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to set IIR filter: {}", e),
             })?;
-        
+
         // Enable pressure and temperature sensors and set normal mode
         // 0x1B = PWR_CTRL: [5:4]=mode=11 (normal), [1]=press_en=1, [0]=temp_en=1 = 0x33
-        bus.write_byte(self.address, 0x1B, 0x33).await
+        bus.write_byte(self.address, 0x1B, 0x33)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to enable sensors: {}", e),
             })?;
-        
+
         // Wait for first measurement to complete
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        
+
         // Force a measurement in case normal mode isn't working
         // 0x1B = PWR_CTRL: forced mode with both sensors = 0x13
-        bus.write_byte(self.address, 0x1B, 0x13).await
+        bus.write_byte(self.address, 0x1B, 0x13)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to force measurement: {}", e),
             })?;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        
+
         // Back to normal mode
-        bus.write_byte(self.address, 0x1B, 0x33).await
+        bus.write_byte(self.address, 0x1B, 0x33)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to set normal mode: {}", e),
             })?;
-        
-        println!("[{}] BMP388 calibration loaded", self.id);
+
+        debug!("[{}] BMP388 calibration loaded", self.id);
         Ok(())
     }
 
     async fn read(&self, bus: &mut I2CBus) -> SensorResult<SensorDataFrame> {
-        let calibration = self.calibration.as_ref()
+        let calibration = self
+            .calibration
+            .as_ref()
             .ok_or_else(|| SensorError::DataError {
                 sensor: self.id.clone(),
                 reason: "Calibration not loaded".to_string(),
             })?;
-        
+
         // Pressure and temperature are 24-bit unsigned
         let mut buf = [0u8; 6];
-        bus.read_bytes(self.address, 0x04, &mut buf).await
+        bus.read_bytes(self.address, 0x04, &mut buf)
+            .await
             .map_err(|e| SensorError::ReadError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to read sensor data: {}", e),
@@ -199,7 +217,7 @@ impl SensorDriver for Bmp388 {
         let t_fine = partial_data6;
         // The formula outputs temperature scaled by 100, divide to get °C
         let temperature = (partial_data6 * 25.0 / 16384.0) / 100.0;
-        
+
         // Pressure compensation according to BMP388 datasheet (Python reference implementation)
         let partial_data1 = t_fine * t_fine;
         let partial_data2 = partial_data1 / 64.0;
@@ -207,13 +225,17 @@ impl SensorDriver for Bmp388 {
         let partial_data4 = calibration.p8 * partial_data3 / 32.0;
         let partial_data5 = calibration.p7 * partial_data1 * 16.0;
         let partial_data6 = calibration.p6 * t_fine * 4194304.0;
-        let offset = calibration.p5 * 140737488355328.0 + partial_data4 + partial_data5 + partial_data6;
-        
+        let offset =
+            calibration.p5 * 140737488355328.0 + partial_data4 + partial_data5 + partial_data6;
+
         let partial_data2 = calibration.p4 * partial_data3 / 32.0;
         let partial_data4 = calibration.p3 * partial_data1 * 4.0;
         let partial_data5 = (calibration.p2 - 16384.0) * t_fine * 2097152.0;
-        let sensitivity = (calibration.p1 - 16384.0) * 70368744177664.0 + partial_data2 + partial_data4 + partial_data5;
-        
+        let sensitivity = (calibration.p1 - 16384.0) * 70368744177664.0
+            + partial_data2
+            + partial_data4
+            + partial_data5;
+
         let partial_data1 = sensitivity / 16777216.0 * press_raw as f64;
         let partial_data2 = calibration.p10 * t_fine;
         let partial_data3 = partial_data2 + 65536.0 * calibration.p9;
@@ -234,6 +256,8 @@ impl SensorDriver for Bmp388 {
                 temp: Some(temperature as f32),
                 pressure_static: Some(pressure as f32),
                 pressure_pitot: None,
+                quaternion: None,
+                angular_velocity_body: None,
             },
             PressureKind::Pitot => SensorDataFrame {
                 accel: None,
@@ -242,6 +266,8 @@ impl SensorDriver for Bmp388 {
                 temp: Some(temperature as f32),
                 pressure_static: None,
                 pressure_pitot: Some(pressure as f32),
+                quaternion: None,
+                angular_velocity_body: None,
             },
         };
 
@@ -254,5 +280,9 @@ impl SensorDriver for Bmp388 {
 
     fn bus(&self) -> &str {
         &self.bus_id
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

@@ -12,7 +12,7 @@ const OUTX_L_G: u8 = 0x22;
 const OUTX_L_XL: u8 = 0x28;
 
 const ACCEL_SENSITIVITY_2G: f32 = 0.061 * 9.81 / 1000.0; // m/s^2 per LSB
-const GYRO_SENSITIVITY_250DPS: f32 = 8.75 / 1000.0;      // dps per LSB
+const GYRO_SENSITIVITY_250DPS: f32 = 8.75 / 1000.0; // dps per LSB
 
 pub struct Lsm6dsl {
     id: String,
@@ -22,7 +22,11 @@ pub struct Lsm6dsl {
 
 impl Lsm6dsl {
     pub fn new(id: String, address: u8, bus_id: String) -> Self {
-        Self { id, address, bus_id }
+        Self {
+            id,
+            address,
+            bus_id,
+        }
     }
 }
 
@@ -31,8 +35,9 @@ impl SensorDriver for Lsm6dsl {
     async fn init(&mut self, bus: &mut I2CBus) -> SensorResult<()> {
         // Verify device identity
         let mut who_am_i_buf = [0u8; 1];
-        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf).await?;
-        
+        bus.read_bytes(self.address, WHO_AM_I, &mut who_am_i_buf)
+            .await?;
+
         if who_am_i_buf[0] != 0x6A {
             return Err(SensorError::WrongChipId {
                 sensor: self.id.clone(),
@@ -42,14 +47,16 @@ impl SensorDriver for Lsm6dsl {
         }
 
         // Configure accelerometer: 104 Hz, 2g
-        bus.write_byte(self.address, CTRL1_XL, 0b01000000).await
+        bus.write_byte(self.address, CTRL1_XL, 0b01000000)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to configure accelerometer: {}", e),
             })?;
-            
+
         // Configure gyroscope: 104 Hz, 250 dps
-        bus.write_byte(self.address, CTRL2_G, 0b01000000).await
+        bus.write_byte(self.address, CTRL2_G, 0b01000000)
+            .await
             .map_err(|e| SensorError::InitError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to configure gyroscope: {}", e),
@@ -63,7 +70,8 @@ impl SensorDriver for Lsm6dsl {
 
         // Read accelerometer data
         let mut accel_buf = [0u8; 6];
-        bus.read_bytes(self.address, OUTX_L_XL, &mut accel_buf).await
+        bus.read_bytes(self.address, OUTX_L_XL, &mut accel_buf)
+            .await
             .map_err(|e| SensorError::ReadError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to read accelerometer: {}", e),
@@ -81,7 +89,8 @@ impl SensorDriver for Lsm6dsl {
 
         // Read gyroscope data
         let mut gyro_buf = [0u8; 6];
-        bus.read_bytes(self.address, OUTX_L_G, &mut gyro_buf).await
+        bus.read_bytes(self.address, OUTX_L_G, &mut gyro_buf)
+            .await
             .map_err(|e| SensorError::ReadError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to read gyroscope: {}", e),
@@ -99,7 +108,8 @@ impl SensorDriver for Lsm6dsl {
 
         // Read temperature data
         let mut temp_buf = [0u8; 2];
-        bus.read_bytes(self.address, OUT_TEMP_L, &mut temp_buf).await
+        bus.read_bytes(self.address, OUT_TEMP_L, &mut temp_buf)
+            .await
             .map_err(|e| SensorError::ReadError {
                 sensor: self.id.clone(),
                 reason: format!("Failed to read temperature: {}", e),
@@ -116,5 +126,9 @@ impl SensorDriver for Lsm6dsl {
 
     fn bus(&self) -> &str {
         &self.bus_id
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

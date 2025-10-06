@@ -6,25 +6,33 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "time", "fs", "sync"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_derive = "1.0"
 serde_json = "1.0"
 toml = "0.8"
 async-trait = "0.1"
 thiserror = "1.0"
 i2cdev = "0.6.1"
 
+# Serial and MAVLink dependencies
+tokio-serial = "5.4"
+mavlink = { version = "0.15", default-features = false, features = ["std", "common", "tokio-1"] }
+
 # gRPC dependencies
 tonic = "0.12"
 prost = "0.13"
 tokio-stream = { version = "0.1", features = ["sync"] }
 
+# Logging dependencies
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
 [build-dependencies]
 tonic-build = "0.12"
 
 [features]
-default = ["lsm6dsl", "lis3mdl", "bmp388"]
+default = ["lsm6dsl", "lis3mdl", "bmp388", "icm42688p", "mavlink_sensors"]
 lsm6dsl = []
 lis3mdl = []
 bmp388 = []
 icm42688p = []
+mavlink_sensors = []
 
