@@ -1,0 +1,54 @@
+[package]
+name = "navigate-sensorhub"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+embedded-hal.workspace = true
+
+# Platform-specific HAL
+linux-embedded-hal = { workspace = true, optional = true }
+embedded-hal-async = { workspace = true, optional = true }
+
+# Legacy I2C (conditional on features)
+i2cdev = { workspace = true, optional = true }
+
+# Serial and MAVLink
+tokio-serial.workspace = true
+mavlink.workspace = true
+
+# gRPC
+tonic.workspace = true
+prost.workspace = true
+tokio-stream.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Sensor drivers (all optional)
+icm426xx = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-build.workspace = true
+
+[features]
+default = ["linux-hal", "mavlink_sensors"]
+
+# Platform selection
+linux-hal = ["linux-embedded-hal", "i2cdev"]
+bare-metal-hal = ["embedded-hal-async"]
+
+# Sensor drivers
+icm426xx-driver = ["icm426xx", "linux-hal"]
+lsm6dsl = ["linux-hal"]
+lis3mdl = ["linux-hal"]
+bmp388 = ["linux-hal"]
+icm42688p = ["linux-hal"]  # Legacy driver (deprecated)
+mavlink_sensors = []

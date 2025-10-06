@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package sensorhub;
+
+// Common header for all sensor messages
+message Header {
+    string device_id = 1;
+    string sensor_id = 2;
+    string frame_id = 3;
+    uint64 seq = 4;
+    uint64 t_utc_ns = 5;
+    uint64 t_mono_ns = 6;
+    bool pps_locked = 7;
+    bool ptp_locked = 8;
+    int32 clock_err_ppb = 9;
+    uint32 sigma_t_ns = 10;
+    uint32 schema_v = 11;
+}
+
+// IMU sensor data (accelerometer + gyroscope)
+message IMUData {
+    Header header = 1;
+    float ax = 2;  // Acceleration X-axis (m/s²)
+    float ay = 3;  // Acceleration Y-axis (m/s²)
+    float az = 4;  // Acceleration Z-axis (m/s²)
+    float gx = 5;  // Angular velocity X-axis (rad/s)
+    float gy = 6;  // Angular velocity Y-axis (rad/s)
+    float gz = 7;  // Angular velocity Z-axis (rad/s)
+}
+
+// Magnetometer sensor data
+message MagnetometerData {
+    Header header = 1;
+    float mx = 2;  // Magnetic field X-axis (μT)
+    float my = 3;  // Magnetic field Y-axis (μT)
+    float mz = 4;  // Magnetic field Z-axis (μT)
+}
+
+// Barometer sensor data
+message BarometerData {
+    Header header = 1;
+    float pressure = 2;     // Atmospheric pressure (Pa)
+    float temperature = 3;  // Temperature (°C)
+    float altitude = 4;     // Calculated altitude (m)
+}
+
+// Unified sensor data message
+message SensorData {
+    oneof data {
+        IMUData imu = 1;
+        MagnetometerData magnetometer = 2;
+        BarometerData barometer = 3;
+    }
+}
+
+// Request message for sensor streams
+message SensorRequest {
+    // Optional sensor-specific filtering (future use)
+    repeated string sensor_ids = 1;
+    optional uint32 max_frequency_hz = 2;
+}
+
+// SensorHub gRPC service definition
+service SensorHub {
+    // Stream IMU data (accelerometer + gyroscope)
+    rpc StreamIMU(SensorRequest) returns (stream IMUData);
+    
+    // Stream magnetometer data
+    rpc StreamMagnetometer(SensorRequest) returns (stream MagnetometerData);
+    
+    // Stream barometer data
+    rpc StreamBarometer(SensorRequest) returns (stream BarometerData);
+    
+    // Stream all sensor data in unified format
+    rpc StreamAll(SensorRequest) returns (stream SensorData);
+    
+    // Get sensor health/status information
+    rpc GetSensorStatus(SensorRequest) returns (SensorStatusResponse);
+}
+
+// Sensor status information
+message SensorStatusResponse {
+    repeated SensorStatus sensors = 1;
+}
+
+message SensorStatus {
+    string sensor_id = 1;
+    bool is_active = 2;
+    bool is_healthy = 3;
+    uint32 frequency_hz = 4;
+    uint64 messages_sent = 5;
+    uint64 last_message_time_ns = 6;
+    optional string error_message = 7;
+}

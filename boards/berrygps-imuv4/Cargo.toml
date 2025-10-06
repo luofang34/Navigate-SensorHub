@@ -1,0 +1,19 @@
+[package]
+name = "navigate-sensorhub-berrygps-imuv4"
+version = "0.1.0"
+edition = "2021"
+description = "Navigate SensorHub for BerryGPS-IMUv4 board"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "navigate-sensorhub"
+path = "src/main.rs"
+
+[dependencies]
+# Note: icm426xx-driver not included yet (requires I2C support in icm426xx crate)
+# Using legacy icm42688p driver for now
+navigate-sensorhub = { path = "../../navigate-sensorhub", features = ["icm42688p", "lsm6dsl", "lis3mdl", "bmp388", "mavlink_sensors"] }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tonic.workspace = true
