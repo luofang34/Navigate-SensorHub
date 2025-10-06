@@ -120,23 +120,23 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=sha,prefix=commit-
           
-    - name: Build Docker image
+    - name: Build Docker image for testing (linux/amd64 only)
       uses: docker/build-push-action@v5
       with:
         context: .
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         push: false
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         load: true
-        
+
     - name: Test Docker image
       run: |
         # Test that the binary exists and shows help
         docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --help || true
-        
+
         # Test container structure
         docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ls -la /usr/local/bin/
         docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} ls -la /app/
