@@ -33,12 +33,12 @@ async fn main() {
     let sensor_config = load_sensor_config(&sensor_config_path).expect("Failed to load sensor config");
     info!("[config] loaded {} sensor(s)", sensor_config.sensors.len());
 
-    // Create gRPC service
+    // Create gRPC service BEFORE initializing sensors (MAVLink sensors need it)
     let grpc_service = Arc::new(SensorHubService::new());
     info!("[gRPC] Service initialized");
 
-    // Initialize sensors and buses
-    let (sensors, buses) = init_all(&sensor_config).await.expect("Initialization failed");
+    // Initialize sensors and buses (pass gRPC service for MAVLink sensor injection)
+    let (sensors, buses) = init_all(&sensor_config, grpc_service.clone()).await.expect("Initialization failed");
     info!("[registry] sensors and buses initialized");
 
     // Spawn sensor tasks with gRPC service

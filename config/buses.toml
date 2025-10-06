@@ -1,9 +1,13 @@
-[[bus]]
-id = "i2c0"
-type = "i2c"
-path = "/dev/i2c-0"
-
+# Serial bus for MAVLink communication with flight controller
 [[bus]]
 id = "serial0"
 type = "serial"
-path = "/dev/ttyACM1"
+# macOS: /dev/cu.usbmodem01 or /dev/cu.usbserial-*
+# Linux: /dev/ttyACM0 or /dev/ttyUSB0
+path = "/dev/cu.usbmodem01"
+
+# Optional: I2C bus for local sensors (only needed if you have I2C sensors)
+# [[bus]]
+# id = "i2c0"
+# type = "i2c"
+# path = "/dev/i2c-0"

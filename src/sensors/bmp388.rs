@@ -235,6 +235,8 @@ impl SensorDriver for Bmp388 {
                 temp: Some(temperature as f32),
                 pressure_static: Some(pressure as f32),
                 pressure_pitot: None,
+                quaternion: None,
+                angular_velocity_body: None,
             },
             PressureKind::Pitot => SensorDataFrame {
                 accel: None,
@@ -243,6 +245,8 @@ impl SensorDriver for Bmp388 {
                 temp: Some(temperature as f32),
                 pressure_static: None,
                 pressure_pitot: Some(pressure as f32),
+                quaternion: None,
+                angular_velocity_body: None,
             },
         };
 

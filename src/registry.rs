@@ -4,15 +4,94 @@ use crate::sensors::create_sensor_driver;
 use crate::sensors::SensorDriver;
 use crate::bus::i2c::I2CBus;
 use crate::bus::serial::SerialBus;
-use crate::bus::mavlink::MavlinkConnection;
+use crate::bus::mavlink::{MavlinkConnection, DetectedSensor};
 use crate::bus::BusType;
 use crate::errors::{RegistryError, RegistryResult, SensorError, ConfigError};
+use crate::grpc_service::SensorHubService;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, info, error};
+use tracing::{debug, info, error, warn};
 
-pub async fn init_all(sensor_config: &SensorConfig) -> RegistryResult<(Vec<Box<dyn SensorDriver>>, HashMap<String, Arc<Mutex<I2CBus>>>)> {
+/// Create a MAVLink sensor driver from detected sensor type with proper instance mapping
+async fn create_mavlink_sensor(
+    sensor_type: DetectedSensor,
+    bus_id: &str,
+    mavlink_conn: &Arc<MavlinkConnection>,
+    grpc_service: &Arc<SensorHubService>,
+    dummy_i2c_bus: Option<&Arc<Mutex<I2CBus>>>,
+) -> RegistryResult<Box<dyn SensorDriver>> {
+    #[cfg(feature = "mavlink_sensors")]
+    {
+        use crate::sensors::mavlink::MavlinkSensorType;
+
+        // Map DetectedSensor enum to (id, MavlinkSensorType)
+        let (id, mavlink_type) = match sensor_type {
+            DetectedSensor::ScaledImu => (
+                "fc_imu0".to_string(),
+                MavlinkSensorType::Imu { instance: 0 }
+            ),
+            DetectedSensor::ScaledImu2 => (
+                "fc_imu1".to_string(),
+                MavlinkSensorType::Imu { instance: 1 }
+            ),
+            DetectedSensor::ScaledImu3 => (
+                "fc_imu2".to_string(),
+                MavlinkSensorType::Imu { instance: 2 }
+            ),
+            DetectedSensor::HighresImu => (
+                "fc_imu_highres".to_string(),
+                MavlinkSensorType::HighresImu
+            ),
+            DetectedSensor::ScaledPressure => (
+                "fc_baro0".to_string(),
+                MavlinkSensorType::Barometer
+            ),
+            DetectedSensor::AttitudeQuaternion => (
+                "fc_attitude".to_string(),
+                MavlinkSensorType::Attitude
+            ),
+        };
+
+        info!("[registry] Auto-creating MAVLink sensor: {} (type: {:?})", id, mavlink_type);
+
+        // Create MavlinkSensor directly with the correct type (bypass factory)
+        use crate::sensors::mavlink::MavlinkSensor;
+        let mut sensor: Box<dyn SensorDriver> = Box::new(
+            MavlinkSensor::new(id.clone(), bus_id.to_string(), mavlink_type)
+        );
+
+        // Inject gRPC service and MAVLink connection
+        if let Some(mavlink_sensor) = sensor.as_any_mut().downcast_mut::<MavlinkSensor>() {
+            mavlink_sensor.set_grpc_service(grpc_service.clone());
+            mavlink_sensor.set_mavlink_connection(mavlink_conn.clone());
+            info!("[registry] Injected gRPC service and MAVLink connection into {}", id);
+        } else {
+            warn!("[registry] Failed to downcast sensor {} to MavlinkSensor - this shouldn't happen!", id);
+        }
+
+        // Initialize the sensor (for MAVLink sensors, this is a no-op - message loop already started)
+        if let Some(i2c_bus) = dummy_i2c_bus {
+            let mut bus = i2c_bus.lock().await;
+            sensor.init(&mut *bus).await
+                .map_err(|e| RegistryError::RegistrationError(e))?;
+        }
+
+        Ok(sensor)
+    }
+
+    #[cfg(not(feature = "mavlink_sensors"))]
+    {
+        Err(RegistryError::DriverCreationError(
+            SensorError::UnsupportedDriver { driver: "mavlink_sensors feature not enabled".to_string() }
+        ))
+    }
+}
+
+pub async fn init_all(
+    sensor_config: &SensorConfig,
+    grpc_service: Arc<SensorHubService>,
+) -> RegistryResult<(Vec<Box<dyn SensorDriver>>, HashMap<String, Arc<Mutex<I2CBus>>>)> {
     let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config".to_string());
     let bus_config_path = format!("{}/buses.toml", config_path);
     let bus_cfg = load_bus_config(&bus_config_path)
@@ -34,12 +113,16 @@ pub async fn init_all(sensor_config: &SensorConfig) -> RegistryResult<(Vec<Box<d
         match bus_type {
             BusType::I2C => {
                 info!("[registry] Initializing I2C bus: {} at {}", b.id, b.path);
-                let bus = I2CBus::new(&b.path)
-                    .map_err(|e| RegistryError::DriverCreationError(SensorError::BusNotFound {
-                        bus: b.id.clone()
-                    }))?;
-                i2c_bus_map.insert(b.id.clone(), Arc::new(Mutex::new(bus)));
-                info!("[registry] I2C bus {} initialized successfully", b.id);
+                match I2CBus::new(&b.path) {
+                    Ok(bus) => {
+                        i2c_bus_map.insert(b.id.clone(), Arc::new(Mutex::new(bus)));
+                        info!("[registry] I2C bus {} initialized successfully", b.id);
+                    }
+                    Err(e) => {
+                        warn!("[registry] Failed to initialize I2C bus {} (this is OK on macOS if only using MAVLink): {:?}", b.id, e);
+                        // Continue - MAVLink sensors don't actually need I2C
+                    }
+                }
             }
             BusType::Serial => {
                 info!("[registry] Initializing Serial/MAVLink bus: {} at {}", b.id, b.path);
@@ -56,9 +139,15 @@ pub async fn init_all(sensor_config: &SensorConfig) -> RegistryResult<(Vec<Box<d
     }
 
     let mut sensors: Vec<Box<dyn SensorDriver>> = Vec::new();
-    info!("[registry] Initializing {} sensor(s)...", sensor_config.sensors.len());
 
-    for s in sensor_config.sensors.iter() {
+    // First, initialize locally-connected sensors (I2C, SPI, etc.) from config
+    let local_sensors: Vec<_> = sensor_config.sensors.iter()
+        .filter(|s| !s.driver.starts_with("mavlink_"))
+        .collect();
+
+    info!("[registry] Initializing {} local sensor(s) from config...", local_sensors.len());
+
+    for s in local_sensors.iter() {
         debug!("[registry] Creating sensor driver: id={} type={} bus={} addr=0x{:02X}",
                s.id, s.driver, s.bus, s.address);
         let mut sensor = create_sensor_driver(&s.driver, s.id.clone(), s.address, s.bus.clone())
@@ -66,56 +155,46 @@ pub async fn init_all(sensor_config: &SensorConfig) -> RegistryResult<(Vec<Box<d
                 error!("[registry] Failed to create sensor {}: {:?}", s.id, e);
                 RegistryError::DriverCreationError(e)
             })?;
-        info!("[registry] Sensor {} created successfully", s.id);
 
-        // Check if this is a MAVLink sensor
-        let is_mavlink_sensor = s.driver.starts_with("mavlink_");
+        // For I2C sensors, use the I2C bus
+        let bus_arc = i2c_bus_map.get(&s.bus)
+            .ok_or_else(|| RegistryError::DriverCreationError(SensorError::BusNotFound {
+                bus: s.bus.clone()
+            }))?;
+        let mut bus = bus_arc.lock().await;
+        sensor.init(&mut *bus).await
+            .map_err(|e| RegistryError::RegistrationError(e))?;
 
-        if is_mavlink_sensor {
-            // For MAVLink sensors, set the connection and initialize without I2C bus
-            let mavlink_conn = mavlink_connections.get(&s.bus)
-                .ok_or_else(|| RegistryError::DriverCreationError(SensorError::BusNotFound {
-                    bus: s.bus.clone()
-                }))?;
-
-            // Use dynamic dispatch to set MAVLink connection
-            #[cfg(feature = "mavlink_sensors")]
-            {
-                use crate::sensors::{mavlink_imu, mavlink_baro, mavlink_mag};
-
-                if let Some(imu) = sensor.as_any_mut().downcast_mut::<mavlink_imu::MavlinkImu>() {
-                    imu.set_mavlink_connection(mavlink_conn.clone());
-                } else if let Some(baro) = sensor.as_any_mut().downcast_mut::<mavlink_baro::MavlinkBaro>() {
-                    baro.set_mavlink_connection(mavlink_conn.clone());
-                } else if let Some(mag) = sensor.as_any_mut().downcast_mut::<mavlink_mag::MavlinkMag>() {
-                    mag.set_mavlink_connection(mavlink_conn.clone());
-                }
-            }
-
-            // For MAVLink sensors, we need to call init() but it doesn't actually use the I2C bus
-            // Pass any available I2C bus as a dummy parameter (it won't be accessed)
-            if let Some(i2c_bus) = i2c_bus_map.values().next() {
-                let mut bus = i2c_bus.lock().await;
-                sensor.init(&mut *bus).await
-                    .map_err(|e| RegistryError::RegistrationError(e))?;
-            } else {
-                return Err(RegistryError::BusInitError(ConfigError::ValidationError(
-                    "MAVLink sensors require at least one I2C bus to be configured (as a dummy parameter)".to_string()
-                )));
-            }
-        } else {
-            // For I2C sensors, use the I2C bus
-            let bus_arc = i2c_bus_map.get(&s.bus)
-                .ok_or_else(|| RegistryError::DriverCreationError(SensorError::BusNotFound {
-                    bus: s.bus.clone()
-                }))?;
-            let mut bus = bus_arc.lock().await;
-            sensor.init(&mut *bus).await
-                .map_err(|e| RegistryError::RegistrationError(e))?;
-        }
-
+        info!("[registry] Local sensor {} created successfully", s.id);
         sensors.push(sensor);
     }
 
+    // Auto-discover MAVLink sensors from each serial bus
+    for (bus_id, mavlink_conn) in mavlink_connections.iter() {
+        info!("[registry] Waiting for MAVLink sensor auto-discovery on bus {}...", bus_id);
+
+        // Wait a short time for sensors to be detected (messages to arrive)
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        let detected = mavlink_conn.get_detected_sensors().await;
+        info!("[registry] Auto-detected {} MAVLink sensor type(s) on bus {}", detected.len(), bus_id);
+
+        // Get a dummy I2C bus for initialization (MAVLink sensors don't actually use it)
+        let dummy_bus = i2c_bus_map.values().next();
+
+        for sensor_type in detected {
+            match create_mavlink_sensor(sensor_type, bus_id, mavlink_conn, &grpc_service, dummy_bus).await {
+                Ok(sensor) => {
+                    info!("[registry] MAVLink sensor {} created successfully", sensor.id());
+                    sensors.push(sensor);
+                }
+                Err(e) => {
+                    error!("[registry] Failed to create MAVLink sensor {:?}: {:?}", sensor_type, e);
+                }
+            }
+        }
+    }
+
+    info!("[registry] Total sensors initialized: {}", sensors.len());
     Ok((sensors, i2c_bus_map))
 }

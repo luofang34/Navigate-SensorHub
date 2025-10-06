@@ -20,24 +20,22 @@ pub async fn spawn_sensor_tasks(
         let sensor_id = sensor.id().to_string();
         let bus_id = sensor.bus().to_string();
 
-        // Check if this is a MAVLink sensor (doesn't need I2C bus access in scheduler)
+        // Check if this is a MAVLink sensor (push-based, doesn't need I2C bus)
         let is_mavlink = bus_id.starts_with("serial");
 
-        // Get the I2C bus for I2C sensors, use a dummy for MAVLink sensors
-        let bus_opt = if is_mavlink {
-            // For MAVLink sensors, use any available I2C bus as a dummy (won't be accessed)
-            buses.values().next().cloned()
-        } else {
+        // Get the bus for I2C sensors, use None for MAVLink (they don't access the bus)
+        let bus_opt = if !is_mavlink {
             buses.get(&bus_id).cloned()
+        } else {
+            // MAVLink sensors don't need a bus - they read from their cached last_frame
+            None
         };
 
-        let bus = match bus_opt {
-            Some(b) => b,
-            None => {
-                error!("[scheduler] No bus available for sensor {}", sensor_id);
-                continue;
-            }
-        };
+        // For I2C sensors, bus is required
+        if !is_mavlink && bus_opt.is_none() {
+            error!("[scheduler] No I2C bus available for sensor {}", sensor_id);
+            continue;
+        }
         
         // Find the sensor configuration to get frequency
         let frequency = sensor_config.sensors
@@ -52,7 +50,17 @@ pub async fn spawn_sensor_tasks(
         tokio::spawn(async move {
             info!("[{}] Starting sensor task at {}Hz", sensor_id, frequency);
 
+            if is_mavlink {
+                // MAVLink sensors are push-based and don't need polling
+                // They publish data directly from their message loops
+                return; // Exit this task
+            }
+
+            // Only I2C/SPI sensors reach here - they need polling
+            let bus = bus_opt.unwrap(); // Safe because we checked earlier
+
             loop {
+                // Read sensor data from I2C bus
                 let mut bus_lock = bus.lock().await;
                 let result = sensor.read(&mut *bus_lock).await;
                 drop(bus_lock); // Release lock early

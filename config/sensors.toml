@@ -1,4 +1,8 @@
-# Commented out - no I2C sensor connected
+# Local sensors configuration (I2C, SPI, etc.)
+# Only configure sensors directly connected to this companion computer
+# MAVLink sensors from flight controller are AUTO-DISCOVERED - do not list them here!
+
+# Example: Local I2C IMU (uncomment if you have one)
 # [[sensor]]
 # id = "imu0"
 # driver = "icm42688p"
@@ -6,24 +10,13 @@
 # address = 0x69
 # frequency = 100
 
-# Flight controller sensors via MAVLink
-[[sensor]]
-id = "fc_imu"
-driver = "mavlink_imu"
-bus = "serial0"
-address = 0x00  # Virtual address (not used for MAVLink)
-frequency = 100
+# Example: Local SPI sensor (uncomment if you have one)
+# [[sensor]]
+# id = "spi_sensor0"
+# driver = "some_spi_sensor"
+# bus = "spi0"
+# address = 0x00
+# frequency = 100
 
-[[sensor]]
-id = "fc_baro"
-driver = "mavlink_baro"
-bus = "serial0"
-address = 0x01  # Virtual address
-frequency = 50
-
-[[sensor]]
-id = "fc_mag"
-driver = "mavlink_mag"
-bus = "serial0"
-address = 0x02  # Virtual address
-frequency = 50
+# Note: Flight controller sensors (IMU, barometer, attitude, etc.) via MAVLink are
+# automatically detected from the message stream - no configuration needed!

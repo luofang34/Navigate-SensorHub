@@ -1,10 +1,11 @@
 use thiserror::Error;
+use crate::bus::i2c::I2CError;
 
 /// Comprehensive error types for the Navigate SensorHub
 #[derive(Error, Debug)]
 pub enum SensorError {
     #[error("I2C communication failed: {0}")]
-    I2cError(#[from] i2cdev::linux::LinuxI2CError),
+    I2cError(#[from] I2CError),
 
     #[error("Serial port error: {0}")]
     SerialError(#[from] tokio_serial::Error),

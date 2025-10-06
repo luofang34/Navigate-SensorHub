@@ -4,7 +4,7 @@ use std::fs;
 /// Root configuration struct expecting `[[sensor]]` TOML array format
 #[derive(Debug, Deserialize)]
 pub struct SensorConfig {
-    #[serde(rename = "sensor")]
+    #[serde(rename = "sensor", default)]
     pub sensors: Vec<SensorEntry>,
 }
 

@@ -10,6 +10,10 @@ pub struct SensorDataFrame {
     pub temp: Option<f32>,
     pub pressure_static: Option<f32>,
     pub pressure_pitot: Option<f32>,
+    /// Attitude quaternion (w, x, y, z) from ATTITUDE_QUATERNION
+    pub quaternion: Option<[f32; 4]>,
+    /// Body angular velocity (roll, pitch, yaw rates in rad/s)
+    pub angular_velocity_body: Option<[f32; 3]>,
 }
 
 #[async_trait]
@@ -32,11 +36,7 @@ pub mod bmp388;
 #[cfg(feature = "icm42688p")]
 pub mod icm42688p;
 #[cfg(feature = "mavlink_sensors")]
-pub mod mavlink_imu;
-#[cfg(feature = "mavlink_sensors")]
-pub mod mavlink_baro;
-#[cfg(feature = "mavlink_sensors")]
-pub mod mavlink_mag;
+pub mod mavlink;
 
 pub fn create_sensor_driver(
     driver: &str,
@@ -54,11 +54,22 @@ pub fn create_sensor_driver(
         #[cfg(feature = "icm42688p")]
         "icm42688p" => Ok(Box::new(icm42688p::Icm42688p::new(id, address, bus_id))),
         #[cfg(feature = "mavlink_sensors")]
-        "mavlink_imu" => Ok(Box::new(mavlink_imu::MavlinkImu::new(id, address, bus_id))),
+        "mavlink_imu" => Ok(Box::new(mavlink::MavlinkSensor::new(
+            id, bus_id, mavlink::MavlinkSensorType::Imu{instance: 0}
+        ))),
         #[cfg(feature = "mavlink_sensors")]
-        "mavlink_baro" => Ok(Box::new(mavlink_baro::MavlinkBaro::new(id, address, bus_id))),
+        "mavlink_baro" => Ok(Box::new(mavlink::MavlinkSensor::new(
+            id, bus_id, mavlink::MavlinkSensorType::Barometer
+        ))),
         #[cfg(feature = "mavlink_sensors")]
-        "mavlink_mag" => Ok(Box::new(mavlink_mag::MavlinkMag::new(id, address, bus_id))),
+        "mavlink_mag" => {
+            // Magnetometer is not implemented yet - TODO
+            Err(SensorError::UnsupportedDriver { driver: "mavlink_mag (not yet implemented)".to_string() })
+        }
+        #[cfg(feature = "mavlink_sensors")]
+        "mavlink_attitude" => Ok(Box::new(mavlink::MavlinkSensor::new(
+            id, bus_id, mavlink::MavlinkSensorType::Attitude
+        ))),
         _ => Err(SensorError::UnsupportedDriver { driver: driver.to_string() }),
     }
 }
