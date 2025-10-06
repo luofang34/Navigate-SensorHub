@@ -2,9 +2,11 @@
 [[bus]]
 id = "serial0"
 type = "serial"
-# macOS: /dev/cu.usbmodem01 or /dev/cu.usbserial-*
-# Linux: /dev/ttyACM0 or /dev/ttyUSB0
-path = "/dev/cu.usbmodem01"
+# Set path to "auto" to automatically detect flight controller via MAVLink HEARTBEAT
+# Or specify a manual path:
+#   macOS: /dev/cu.usbmodem01 or /dev/cu.usbserial-*
+#   Linux: /dev/ttyACM0 or /dev/ttyUSB0
+path = "auto"
 
 # Optional: I2C bus for local sensors (only needed if you have I2C sensors)
 # [[bus]]

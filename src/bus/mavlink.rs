@@ -49,25 +49,61 @@ pub struct MavlinkConnection {
     tx: broadcast::Sender<mavlink::common::MavMessage>,
     /// Set of detected sensors
     detected_sensors: Arc<Mutex<HashSet<DetectedSensor>>>,
+    /// Last known working port path (for reconnection)
+    port_path: Arc<Mutex<String>>,
+    /// Whether this connection was auto-detected (enables dynamic port discovery)
+    auto_detect: bool,
 }
 
 impl MavlinkConnection {
     /// Create a new MAVLink connection from a serial bus
     /// Takes ownership of the SerialBus and starts the message loop
-    pub fn new(serial: SerialBus) -> Self {
+    /// auto_detect: if true, will attempt to re-discover the flight controller on reconnection
+    pub fn new(serial: SerialBus, auto_detect: bool) -> Self {
         // Create a broadcast channel with a reasonable buffer (1000 messages)
         let (tx, _rx) = broadcast::channel(1000);
         let detected_sensors = Arc::new(Mutex::new(HashSet::new()));
+        let port_path = Arc::new(Mutex::new(serial.path().to_string()));
 
         // Spawn the receive loop
         let tx_clone = tx.clone();
         let detected_clone = detected_sensors.clone();
+        let port_path_clone = port_path.clone();
         tokio::spawn(async move {
+            Self::receive_loop(
+                serial,
+                tx_clone,
+                detected_clone,
+                port_path_clone,
+                auto_detect,
+            )
+            .await;
+        });
+
+        Self {
+            tx,
+            detected_sensors,
+            port_path,
+            auto_detect,
+        }
+    }
+
+    /// Main receive loop with automatic reconnection support
+    async fn receive_loop(
+        mut serial: SerialBus,
+        tx: broadcast::Sender<mavlink::common::MavMessage>,
+        detected_sensors: Arc<Mutex<HashSet<DetectedSensor>>>,
+        port_path: Arc<Mutex<String>>,
+        auto_detect: bool,
+    ) {
+        info!("[MAVLink] Starting receive loop...");
+        let mut backoff_ms = 100u64; // Start with 100ms backoff
+        const MAX_BACKOFF_MS: u64 = 2000; // Max 2 second backoff
+
+        loop {
             // Take ownership of the stream and wrap in AsyncPeekReader
             let stream = serial.into_stream();
             let mut peek_reader = mavlink::async_peek_reader::AsyncPeekReader::new(stream);
-
-            info!("[MAVLink] Starting receive loop...");
 
             loop {
                 // Auto-detect MAVLink v1 (0xFE) or v2 (0xFD) protocol version
@@ -140,14 +176,14 @@ impl MavlinkConnection {
 
                         // Track newly detected sensors
                         if let Some(sensor) = sensor_type {
-                            let mut detected = detected_clone.lock().await;
+                            let mut detected = detected_sensors.lock().await;
                             if detected.insert(sensor) {
                                 info!("[MAVLink] Auto-detected new sensor: {:?}", sensor);
                             }
                         }
 
                         // Broadcast to subscribers
-                        match tx_clone.send(msg) {
+                        match tx.send(msg) {
                             Ok(n) => trace!("[MAVLink] Broadcast to {} receivers", n),
                             Err(_) => trace!("[MAVLink] No active receivers"),
                         }
@@ -156,8 +192,62 @@ impl MavlinkConnection {
                         match e {
                             mavlink::error::MessageReadError::Io(io_err) => {
                                 error!("[MAVLink] I/O error: {}", io_err);
-                                // Connection lost, wait a bit and continue
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+                                // Connection lost - attempt to reconnect
+                                info!(
+                                    "[MAVLink] Connection lost, attempting reconnection in {}ms...",
+                                    backoff_ms
+                                );
+                                tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms))
+                                    .await;
+
+                                // Try to reconnect
+                                let new_port_path = if auto_detect {
+                                    // Auto-detect mode: scan for flight controller (handles port changes)
+                                    info!("[MAVLink] Auto-detecting flight controller...");
+                                    match SerialBus::detect_flight_controller().await {
+                                        Ok(path) => {
+                                            let mut p = port_path.lock().await;
+                                            if *p != path {
+                                                info!(
+                                                    "[MAVLink] Flight controller port changed: {} -> {}",
+                                                    *p, path
+                                                );
+                                            }
+                                            *p = path.clone();
+                                            Some(path)
+                                        }
+                                        Err(e) => {
+                                            warn!("[MAVLink] Auto-detection failed: {}", e);
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    // Manual mode: try to reconnect to same port
+                                    let p = port_path.lock().await;
+                                    info!("[MAVLink] Attempting to reconnect to {}...", *p);
+                                    Some(p.clone())
+                                };
+
+                                if let Some(path) = new_port_path {
+                                    match SerialBus::new(&path) {
+                                        Ok(new_serial) => {
+                                            info!("[MAVLink] Reconnected successfully to {}", path);
+                                            serial = new_serial;
+                                            backoff_ms = 100; // Reset backoff on success
+                                            break; // Break inner loop to recreate peek_reader
+                                        }
+                                        Err(e) => {
+                                            warn!("[MAVLink] Reconnection failed: {}", e);
+                                            // Increase backoff exponentially
+                                            backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+                                        }
+                                    }
+                                } else {
+                                    // No port found, increase backoff
+                                    backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+                                }
+
                                 continue;
                             }
                             mavlink::error::MessageReadError::Parse(parse_err) => {
@@ -170,11 +260,6 @@ impl MavlinkConnection {
                 // Small yield to prevent tight loop
                 tokio::task::yield_now().await;
             }
-        });
-
-        Self {
-            tx,
-            detected_sensors,
         }
     }
 

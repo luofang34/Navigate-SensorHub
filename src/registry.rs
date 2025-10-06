@@ -143,18 +143,40 @@ pub async fn init_all(
                 }
             }
             BusType::Serial => {
-                info!(
-                    "[registry] Initializing Serial/MAVLink bus: {} at {}",
-                    b.id, b.path
-                );
-                let serial = SerialBus::new(&b.path).map_err(|e| {
-                    error!("[registry] Failed to open serial port {}: {}", b.path, e);
-                    RegistryError::DriverCreationError(SensorError::SerialError(e.into()))
-                })?;
+                // Check if auto-detection is requested
+                let (serial, auto_detect) = if b.path.trim() == "auto" {
+                    info!(
+                        "[registry] Auto-detecting flight controller for Serial/MAVLink bus: {}",
+                        b.id
+                    );
+                    let detected_path = SerialBus::detect_flight_controller().await.map_err(|e| {
+                        error!("[registry] Flight controller auto-detection failed: {}", e);
+                        RegistryError::DriverCreationError(SensorError::SerialError(e.into()))
+                    })?;
+                    info!(
+                        "[registry] Flight controller auto-detected at: {}",
+                        detected_path
+                    );
+                    let serial = SerialBus::new(&detected_path).map_err(|e| {
+                        error!("[registry] Failed to open serial port {}: {}", detected_path, e);
+                        RegistryError::DriverCreationError(SensorError::SerialError(e.into()))
+                    })?;
+                    (serial, true)
+                } else {
+                    info!(
+                        "[registry] Initializing Serial/MAVLink bus: {} at {}",
+                        b.id, b.path
+                    );
+                    let serial = SerialBus::new(&b.path).map_err(|e| {
+                        error!("[registry] Failed to open serial port {}: {}", b.path, e);
+                        RegistryError::DriverCreationError(SensorError::SerialError(e.into()))
+                    })?;
+                    (serial, false)
+                };
 
                 // Log which port was successfully opened (useful for multi-machine testing)
                 let port_path = serial.path().to_string();
-                let mavlink_conn = MavlinkConnection::new(serial);
+                let mavlink_conn = MavlinkConnection::new(serial, auto_detect);
                 mavlink_connections.insert(b.id.clone(), Arc::new(mavlink_conn));
                 info!(
                     "[registry] Serial/MAVLink bus {} initialized successfully on {}",
