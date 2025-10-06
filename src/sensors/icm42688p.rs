@@ -10,7 +10,6 @@ const PWR_MGMT0: u8 = 0x4E;
 const GYRO_CONFIG0: u8 = 0x4F;
 const ACCEL_CONFIG0: u8 = 0x50;
 const TEMP_DATA1: u8 = 0x1D;
-const TEMP_DATA0: u8 = 0x1E;
 const ACCEL_DATA_X1: u8 = 0x1F;
 const GYRO_DATA_X1: u8 = 0x25;
 const REG_BANK_SEL: u8 = 0x76;

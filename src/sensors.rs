@@ -10,9 +10,13 @@ pub struct SensorDataFrame {
     pub temp: Option<f32>,
     pub pressure_static: Option<f32>,
     pub pressure_pitot: Option<f32>,
-    /// Attitude quaternion (w, x, y, z) from ATTITUDE_QUATERNION
+    /// TODO: Attitude quaternion (w, x, y, z) from ATTITUDE_QUATERNION.
+    /// Currently populated from MAVLink but not published - need AttitudeMessage in messages.rs
+    #[allow(dead_code)]
     pub quaternion: Option<[f32; 4]>,
-    /// Body angular velocity (roll, pitch, yaw rates in rad/s)
+    /// TODO: Body angular velocity (roll, pitch, yaw rates in rad/s).
+    /// Currently populated from MAVLink but not published - need AttitudeMessage in messages.rs
+    #[allow(dead_code)]
     pub angular_velocity_body: Option<[f32; 3]>,
 }
 

@@ -4,6 +4,7 @@ use tokio_serial::{SerialPortBuilderExt, SerialStream};
 /// Serial port wrapper for async communication
 pub struct SerialBus {
     port: SerialStream,
+    /// Port path - useful for logging, error messages, and reconnection logic
     path: String,
 }
 
@@ -24,12 +25,7 @@ impl SerialBus {
         })
     }
 
-    /// Get a mutable reference to the underlying serial stream
-    pub fn stream_mut(&mut self) -> &mut SerialStream {
-        &mut self.port
-    }
-
-    /// Get the port path
+    /// Get the port path (useful for logging, debugging, and multi-machine testing)
     pub fn path(&self) -> &str {
         &self.path
     }

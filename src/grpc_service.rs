@@ -92,7 +92,7 @@ impl SensorHubService {
                 };
 
                 // Send to IMU-specific stream
-                if let Err(_) = self.imu_tx.send(imu_data.clone()) {
+                if self.imu_tx.send(imu_data.clone()).is_err() {
                     // No active subscribers - this is fine
                 }
 
@@ -100,7 +100,7 @@ impl SensorHubService {
                 let sensor_data = SensorData {
                     data: Some(sensorhub::sensor_data::Data::Imu(imu_data)),
                 };
-                if let Err(_) = self.all_tx.send(sensor_data) {
+                if self.all_tx.send(sensor_data).is_err() {
                     // No active subscribers - this is fine
                 }
 
@@ -115,14 +115,14 @@ impl SensorHubService {
                     mz: mag.mz,
                 };
 
-                if let Err(_) = self.mag_tx.send(mag_data.clone()) {
+                if self.mag_tx.send(mag_data.clone()).is_err() {
                     // No active subscribers - this is fine
                 }
 
                 let sensor_data = SensorData {
                     data: Some(sensorhub::sensor_data::Data::Magnetometer(mag_data)),
                 };
-                if let Err(_) = self.all_tx.send(sensor_data) {
+                if self.all_tx.send(sensor_data).is_err() {
                     // No active subscribers - this is fine
                 }
 
@@ -137,14 +137,14 @@ impl SensorHubService {
                     altitude: baro.altitude,
                 };
 
-                if let Err(_) = self.baro_tx.send(baro_data.clone()) {
+                if self.baro_tx.send(baro_data.clone()).is_err() {
                     // No active subscribers - this is fine
                 }
 
                 let sensor_data = SensorData {
                     data: Some(sensorhub::sensor_data::Data::Barometer(baro_data)),
                 };
-                if let Err(_) = self.all_tx.send(sensor_data) {
+                if self.all_tx.send(sensor_data).is_err() {
                     // No active subscribers - this is fine
                 }
 

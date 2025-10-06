@@ -62,7 +62,7 @@ pub async fn spawn_sensor_tasks(
             loop {
                 // Read sensor data from I2C bus
                 let mut bus_lock = bus.lock().await;
-                let result = sensor.read(&mut *bus_lock).await;
+                let result = sensor.read(&mut bus_lock).await;
                 drop(bus_lock); // Release lock early
 
                 match result {

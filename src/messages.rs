@@ -117,12 +117,8 @@ impl SensorMessage {
         }
     }
 
-    /// Get the sensor ID from any sensor message
-    pub fn sensor_id(&self) -> &str {
-        &self.header().sensor_id
-    }
-
     /// Serialize to JSON for debugging
+    #[cfg(test)]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }

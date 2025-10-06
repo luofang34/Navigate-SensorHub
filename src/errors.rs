@@ -89,6 +89,7 @@ pub enum ServiceError {
 
 /// Registry and initialization errors
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum RegistryError {
     #[error("Sensor registration failed: {0}")]
     RegistrationError(#[source] SensorError),
@@ -129,6 +130,4 @@ impl From<RegistryError> for String {
 
 /// Result type aliases for convenience
 pub type SensorResult<T> = Result<T, SensorError>;
-pub type ConfigResult<T> = Result<T, ConfigError>;
-pub type ServiceResult<T> = Result<T, ServiceError>;
 pub type RegistryResult<T> = Result<T, RegistryError>;

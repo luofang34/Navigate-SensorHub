@@ -82,9 +82,9 @@ async fn create_mavlink_sensor(
         if let Some(i2c_bus) = dummy_i2c_bus {
             let mut bus = i2c_bus.lock().await;
             sensor
-                .init(&mut *bus)
+                .init(&mut bus)
                 .await
-                .map_err(|e| RegistryError::RegistrationError(e))?;
+                .map_err(RegistryError::RegistrationError)?;
         }
 
         Ok(sensor)
@@ -151,11 +151,14 @@ pub async fn init_all(
                     error!("[registry] Failed to open serial port {}: {}", b.path, e);
                     RegistryError::DriverCreationError(SensorError::SerialError(e.into()))
                 })?;
+
+                // Log which port was successfully opened (useful for multi-machine testing)
+                let port_path = serial.path().to_string();
                 let mavlink_conn = MavlinkConnection::new(serial);
                 mavlink_connections.insert(b.id.clone(), Arc::new(mavlink_conn));
                 info!(
-                    "[registry] Serial/MAVLink bus {} initialized successfully",
-                    b.id
+                    "[registry] Serial/MAVLink bus {} initialized successfully on {}",
+                    b.id, port_path
                 );
             }
         }
@@ -192,9 +195,9 @@ pub async fn init_all(
         })?;
         let mut bus = bus_arc.lock().await;
         sensor
-            .init(&mut *bus)
+            .init(&mut bus)
             .await
-            .map_err(|e| RegistryError::RegistrationError(e))?;
+            .map_err(RegistryError::RegistrationError)?;
 
         info!("[registry] Local sensor {} created successfully", s.id);
         sensors.push(sensor);
